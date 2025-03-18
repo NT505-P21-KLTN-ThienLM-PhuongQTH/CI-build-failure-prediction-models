@@ -1,6 +1,8 @@
 *.h5
 *.pth
-data/
+data/*/*.csv
+data/*/*.json
+data/*/*.npy
 dataset/
 __pycache__/
 ci-build/
