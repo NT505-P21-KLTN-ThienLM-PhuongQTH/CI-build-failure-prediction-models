@@ -1,0 +1,12 @@
+tensorflow
+keras
+pandas
+hyperopt
+optunity
+imblearn
+ConfigSpace
+hpbandster
+tqdm
+hpsklearn
+scikit-learn
+numpy
