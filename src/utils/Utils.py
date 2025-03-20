@@ -7,7 +7,7 @@ from sklearn.preprocessing import StandardScaler
 # Hyperparameter tuning settings
 NBR_REP = 6
 NBR_GEN = 2
-NBR_SOL = 10
+NBR_SOL = 4
 MAX_EVAL = NBR_GEN * NBR_SOL
 
 # Configuration for SMOTE and hybrid approach

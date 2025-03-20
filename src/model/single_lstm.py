@@ -35,20 +35,22 @@ def train_preprocess(dataset_train, time_step):
     if len(training_set) <= time_step:
         raise ValueError(f"Dataset size ({len(training_set)}) must be larger than time_step ({time_step})")
 
+    # Normalize data
+    from sklearn.preprocessing import MinMaxScaler
+    scaler = MinMaxScaler()
+    training_set = scaler.fit_transform(training_set)
+
+    # Apply SMOTE if enabled
     if Utils.WITH_SMOTE:
         X, y = SMOTE().fit_resample(training_set, dataset_train.iloc[:, 0].values)
         training_set = X
     else:
         y = dataset_train.iloc[:, 0].values
 
-    X_train = np.array([training_set[i - time_step:i, 0] for i in range(time_step, len(training_set))])
+    X_train = np.array([training_set[i - time_step:i, :] for i in range(time_step, len(training_set))])
     y_train = np.array([training_set[i, 0] for i in range(time_step, len(training_set))])
 
-    if len(training_set) <= time_step:
-        raise ValueError(f"Dataset size ({len(training_set)}) must be larger than time_step ({time_step})")
-
-    return X_train.reshape(-1, time_step, 1), y_train
-
+    return X_train, y_train
 
 def test_preprocess(dataset_train, dataset_test, time_step):
     """
@@ -62,14 +64,23 @@ def test_preprocess(dataset_train, dataset_test, time_step):
     Returns:
         tuple: Processed X_test and y_test.
     """
-    y_test = dataset_test.iloc[:, 0:1].values
-    dataset_total = pd.concat((dataset_train['build_Failed'], dataset_test['build_Failed']), axis=0)
-    inputs = dataset_total[len(dataset_total) - len(dataset_test) - time_step:].values.reshape(-1, 1)
+    from sklearn.preprocessing import MinMaxScaler
+    scaler = MinMaxScaler()
+    
+    # Normalize data
+    dataset_total = pd.concat((dataset_train.iloc[:, :19], dataset_test.iloc[:, :19]), axis=0)
+    dataset_total_scaled = scaler.fit_transform(dataset_total)
+    
+    if len(dataset_total) < time_step + len(dataset_test):
+        raise ValueError("Not enough data to create test sequences with given time_step")
+    
+    # dataset_total = pd.concat((dataset_train['build_Failed'], dataset_test['build_Failed']), axis=0)
 
-    X_test = np.array([inputs[j - time_step:j, 0] for j in range(time_step, len(inputs))])
+    inputs = dataset_total_scaled[len(dataset_total) - len(dataset_test) - time_step:]
+    X_test = np.array([inputs[j - time_step:j, :] for j in range(time_step, len(inputs))])
+    y_test = dataset_test.iloc[:, 0].values
 
-    return X_test.reshape(-1, time_step, 1), y_test
-
+    return X_test, y_test
 
 def construct_lstm_model(network_params, train_set):
     """
@@ -86,7 +97,7 @@ def construct_lstm_model(network_params, train_set):
     drop = round(network_params["drop_proba"])
 
     model = Sequential([
-        LSTM(units=network_params["nb_units"], return_sequences=True, input_shape=(X_train.shape[1], 1)),
+        LSTM(units=network_params["nb_units"], return_sequences=True, input_shape=(X_train.shape[1], 19)),
         Dropout(drop),
         *[LSTM(units=network_params["nb_units"], return_sequences=True) if i < network_params["nb_layers"] - 1 else
           LSTM(units=network_params["nb_units"]) for i in range(network_params["nb_layers"])],
@@ -98,13 +109,12 @@ def construct_lstm_model(network_params, train_set):
     es = EarlyStopping(monitor='loss', mode='min', verbose=1, patience=10)
 
     history = model.fit(X_train, y_train, epochs=network_params["nb_epochs"],
-                         batch_size=network_params["nb_batch"], verbose=0, callbacks=[es])
+                        batch_size=network_params["nb_batch"], verbose=0, callbacks=[es])
 
     validation_loss = np.amin(history.history['loss'])
     entry = Utils.predict_lstm(model, X_train, y_train)
     entry['validation_loss'] = validation_loss
 
-    # Save model
     model_name = f"lstm_{network_params['nb_units']}_{network_params['nb_layers']}.h5"
     model_path = os.path.join(MODEL_DIR, model_name)
     model.save(model_path)
@@ -192,7 +202,7 @@ if __name__ == "__main__":
     NS = hpns.NameServer(run_id="LSTM", host='127.0.0.1', port=None)
     NS.start()
 
-    dataset = Utils.get_dataset("jruby.csv")
+    dataset = Utils.get_dataset("sonarqube.csv")
     
     print("Dataset Type:", type(dataset))
     print("Dataset Shape:", dataset.shape)

@@ -3,6 +3,10 @@
 data/*/*.csv
 data/*/*.json
 data/*/*.npy
+data/
 dataset/
 __pycache__/
 ci-build/
+ci_build_failure_prediction.egg-info
+dist/
+build/
