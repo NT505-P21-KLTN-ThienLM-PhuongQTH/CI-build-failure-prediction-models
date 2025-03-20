@@ -4,6 +4,7 @@ import numpy as np
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 import logging
 
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
