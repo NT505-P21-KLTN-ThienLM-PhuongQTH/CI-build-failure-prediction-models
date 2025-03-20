@@ -1,8 +1,10 @@
 """Genetic Algorithm Runner to optimize LSTM hyperparameters."""
 import threading
 from tqdm import tqdm
-import src.utils.Utils as Utils
-from src.optimization.optimizer import Optimizer
+from ..utils import Utils as Utils
+from .optimizer import Optimizer
+# import src.utils.Utils as Utils
+# from src.optimization.optimizer import Optimizer
 
 def train_sol_thread(solution, fn_train, params_fn, i):
     """Train a solution in a separate thread."""
@@ -40,8 +42,8 @@ def generate(all_possible_params, fn_train, params_fn):
         tuple: Best hyperparameters, best model, best training entry.
     """
     GA_params = {
-        "population_size": Utils.NBR_SOL,
-        "max_generations": Utils.NBR_GEN,
+        "population_size": Utils.CONFIG['NBR_SOL'],
+        "max_generations": Utils.CONFIG['NBR_GEN'],
         "retain": 0.7,
         "random_select": 0.1,
         "mutate_chance": 0.1
@@ -53,17 +55,18 @@ def generate(all_possible_params, fn_train, params_fn):
 
     for i in range(GA_params['max_generations']):
         print(f"******** Generation {i+1} ********")
-        train_population(pop, fn_train, params_fn)
-        avg_accuracy = get_average_score(pop)
-        print(f"Generation average: {avg_accuracy * 100:.2f}%")
+        train_population(pop, fn_train, params_fn) # Train the population
+        avg_accuracy = get_average_score(pop) # Compute average fitness score
+        print(f"Generation average: {avg_accuracy * 100:.2f}%") # Print average fitness score
 
+        # Print top solutions
         if i != GA_params['max_generations'] - 1:
             print("Evolving population...")
             evolved_pop = optimizer.evolve(pop)
             if evolved_pop:
                 pop = evolved_pop
         else:
-            pop.sort(key=lambda x: x.score, reverse=True)
+            pop.sort(key=lambda x: x.score, reverse=True) # Sort population by fitness score
 
     # Print top solutions
     print_top_solutions(pop[:min(3, len(pop))])

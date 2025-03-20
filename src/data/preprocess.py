@@ -4,7 +4,6 @@ import numpy as np
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 import logging
 
-
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -108,13 +107,26 @@ def preprocess_data(df, output_file=None, split_by_project=False, output_path=No
 
     # Normalize numerical columns
     numerical_columns = [
-        "git_num_all_built_commits", "gh_num_commits_on_files_touched",
-        "git_diff_src_churn", "gh_diff_files_added", "gh_diff_files_deleted",
-        "gh_diff_files_modified", "git_diff_test_churn", "gh_diff_tests_added",
-        "gh_diff_tests_deleted", "gh_diff_src_files", "gh_diff_doc_files",
-        "gh_diff_other_files", "gh_num_commit_comments", "gh_team_size",
-        "gh_sloc", "gh_test_lines_per_kloc", "gh_test_cases_per_kloc",
-        "gh_asserts_cases_per_kloc", "gh_repo_age", "gh_repo_num_commits"
+        "git_num_all_built_commits", 
+        "gh_num_commits_on_files_touched",
+        "git_diff_src_churn", 
+        "gh_diff_files_added", 
+        "gh_diff_files_deleted",
+        "gh_diff_files_modified", 
+        "git_diff_test_churn", 
+        "gh_diff_tests_added",
+        "gh_diff_tests_deleted", 
+        "gh_diff_src_files", 
+        "gh_diff_doc_files",
+        "gh_diff_other_files", 
+        "gh_num_commit_comments", 
+        "gh_team_size",
+        "gh_sloc", 
+        "gh_test_lines_per_kloc", 
+        "gh_test_cases_per_kloc",
+        "gh_asserts_cases_per_kloc", 
+        "gh_repo_age", 
+        "gh_repo_num_commits"
     ]
     logging.info("Normalizing numerical columns with MinMaxScaler")
     scaler = MinMaxScaler()
