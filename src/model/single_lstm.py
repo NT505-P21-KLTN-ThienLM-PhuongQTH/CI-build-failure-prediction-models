@@ -1,4 +1,5 @@
 import os
+import sys
 import numpy as np
 import pandas as pd
 from timeit import default_timer as timer
@@ -7,15 +8,13 @@ from keras.models import Sequential
 from keras.layers import Dense, LSTM, Dropout
 from keras.callbacks import EarlyStopping
 from imblearn.over_sampling import SMOTE
-# import src.utils.Utils as Utils
-# import src.optimization.GA_runner as GARunner
 from ..utils import Utils as Utils
 from ..optimization import GA_runner as GARunner
 import optunity
 import ConfigSpace as CS
 from hpbandster.core.worker import Worker
 from hpbandster.optimizers import BOHB
-import sys
+from sklearn.utils.class_weight import compute_class_weight
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(project_root)
@@ -49,12 +48,24 @@ def train_preprocess(dataset_train, time_step):
     scaler = MinMaxScaler()
     training_set = scaler.fit_transform(training_set)
 
+    print("\nClass Distribution BEFORE SMOTE:")
+    unique, counts = np.unique(y, return_counts=True)
+    class_dist_before = dict(zip(unique, counts / len(y)))
+    print(class_dist_before)
+
     # Apply SMOTE if enabled
     if Utils.CONFIG['WITH_SMOTE']:
-        X, y_smote = SMOTE().fit_resample(training_set, y)
+        print("Applying SMOTE...")
+        smote = SMOTE(random_state=42)
+        X, y_smote = smote.fit_resample(training_set, y)
         training_set = X
     else:
         y_smote = y
+
+    print("Class Distribution AFTER SMOTE:")
+    unique, counts = np.unique(y_smote, return_counts=True)
+    class_dist_after = dict(zip(unique, counts / len(y_smote)))
+    print(class_dist_after)
 
     # Create sequences for LSTM
     X_train = np.lib.stride_tricks.sliding_window_view(training_set, (time_step, training_set.shape[1]))[:-1]
@@ -122,9 +133,13 @@ def construct_lstm_model(network_params, train_set):
     model.compile(optimizer=network_params["optimizer"], loss='binary_crossentropy', metrics=["accuracy"])
     es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=10)
     
+    # Compute class weights
+    class_weights = compute_class_weight('balanced', classes=np.array([0, 1]), y=y_train)
+    class_weight_dict = {0: class_weights[0], 1: class_weights[1]}
+    
     history = model.fit(X_train, y_train, epochs=network_params["nb_epochs"],
                         batch_size=network_params["nb_batch"], validation_split=0.2,
-                        verbose=0, callbacks=[es])
+                        verbose=0, callbacks=[es], class_weight=class_weight_dict)
 
     validation_loss = np.amin(history.history['val_loss'])
     entry = Utils.predict_lstm(model, X_train, y_train)
@@ -310,22 +325,52 @@ def evaluate_tuner(tuner_option, train_set):
     return entry_train
 
 if __name__ == "__main__":
-    dataset = Utils.get_dataset("ros_rosdistro.csv")
+    dataset = Utils.get_dataset("getsentry_sentry.csv")
     
-    # print("Dataset Info:")
-    # print(dataset.info())
-    # print("\nDataset Head:")
-    # print(dataset.head())
+    print("Dataset Info:")
+    print(dataset.info())
+    print("\nDataset Head:")
+    print(dataset.head())
     
-    # train_sets, test_sets = Utils.online_validation_folds(dataset)
+    train_sets, test_sets = Utils.online_validation_folds(dataset)
 
-    # # Evaluate GA tuner
-    # entry_train_ga = evaluate_tuner("ga", train_sets[0])
-    # # Test the best model
-    # X, y = test_preprocess(train_sets[0], test_sets[0], entry_train_ga["params"]["time_step"])
-    # entry_test = Utils.predict_lstm(entry_train_ga["model"], X, y)
+    # Evaluate GA tuner
+    entry_train_ga = evaluate_tuner("ga", train_sets[0])
+    # Test the best model
+    X, y = test_preprocess(train_sets[0], test_sets[0], entry_train_ga["params"]["time_step"])
+    entry_test = Utils.predict_lstm(entry_train_ga["model"], X, y)
     
-    # # Print results
-    # print(entry_train_ga) # Best model from GA
-    # print(entry_test) # Test results
+    # Print results
+    print(entry_train_ga) # Best model from GA
+    print(entry_test) # Test results
+
     print(dataset['build_failed'].value_counts(normalize=True))
+
+
+    # dataset_dir = "data/processed/by_project"
+    # project_info = []
+
+    # for filename in os.listdir(dataset_dir):
+    #     if filename.endswith(".csv"):
+    #         dataset = Utils.get_dataset(filename)
+    #         if "build_failed" in dataset.columns:
+    #             total_rows = len(dataset)
+    #             class_ratio = dataset["build_failed"].value_counts(normalize=True).to_dict()
+    #             class_absolute = dataset["build_failed"].value_counts().to_dict()
+
+    #             project_info.append({
+    #                 "project": filename,
+    #                 "rows": total_rows,
+    #                 "class_ratio": class_ratio,
+    #                 "class_absolute": class_absolute
+    #             })
+
+    # top_projects = sorted(project_info, key=lambda x: x["rows"], reverse=True)[:20]
+
+    # for project in top_projects:
+    #     print(f"\n--- Project: {project['project']} ---")
+    #     print(f"Total rows: {project['rows']}")
+    #     print("Class distribution (ratio):")
+    #     print(project["class_ratio"])
+    #     print("Class distribution (absolute):")
+    #     print(project["class_absolute"])
