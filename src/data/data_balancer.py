@@ -39,7 +39,7 @@ def apply_smote(X, y, sampling_strategy=1.0, random_state=42):
 
     return X_resampled, y_resampled
 
-def compute_balanced_class_weights(y, weight_adjustments={0: 0.8, 1: 1.2}):
+def compute_balanced_class_weights(y):
     """
     Tính class weights để xử lý dữ liệu không cân bằng.
 
@@ -50,7 +50,10 @@ def compute_balanced_class_weights(y, weight_adjustments={0: 0.8, 1: 1.2}):
     Returns:
         dict: Từ điển chứa trọng số cho từng lớp.
     """
-    class_weights = compute_class_weight('balanced', classes=np.array([0, 1]), y=y)
-    class_weight_dict = {0: class_weights[0] * weight_adjustments[0], 1: class_weights[1] * weight_adjustments[1]}
+    class_counts = np.bincount(y.astype(int))
+    total_samples = len(y)
+    n_classes = len(class_counts)
+    class_weights = total_samples / (n_classes * class_counts)
+    class_weight_dict = {i: class_weights[i] for i in range(n_classes)}
     logger.info(f"Computed class weights: {class_weight_dict}")
     return class_weight_dict
