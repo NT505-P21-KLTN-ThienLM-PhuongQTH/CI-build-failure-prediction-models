@@ -10,3 +10,6 @@ ci-build/
 ci_build_failure_prediction.egg-info
 dist/
 build/
+models/*/*.h5
+models/*/*.keras
+.idea/
