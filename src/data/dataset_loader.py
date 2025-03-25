@@ -1,62 +1,74 @@
+# src/data/dataset_loader.py
 import os
-import numpy as np
 import pandas as pd
+import logging
 
-def create_sequences(data, seq_length):
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+def get_dataset(filename, data_dir="data/processed/by_project"):
     """
-    Create sequences of time series data.
+    Tải dữ liệu từ một tệp CSV trong thư mục được chỉ định.
 
-    :param data: Time series data.
-    :param seq_length: Length of time series.
-    :return: Time series and corresponding labels.
+    Args:
+        filename (str): Tên tệp CSV (ví dụ: "celluloid_celluloid.csv").
+        data_dir (str): Thư mục chứa tệp dữ liệu (mặc định: "data/processed/by_project").
+
+    Returns:
+        pd.DataFrame: Dataset được tải dưới dạng DataFrame.
+
+    Raises:
+        FileNotFoundError: Nếu tệp không tồn tại.
+        ValueError: Nếu dữ liệu rỗng.
     """
-    xs, ys = [], []
-    for i in range(len(data) - seq_length):
-        x = data.iloc[i:(i + seq_length)].values
-        y = data.iloc[i + seq_length].values
-        xs.append(x)
-        ys.append(y)
-    return np.array(xs), np.array(ys)
+    # Xây dựng đường dẫn đầy đủ đến tệp
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    file_path = os.path.join(project_root, data_dir, filename)
 
-def save_sequences(sequences, labels, project_name, output_path):
+    # Kiểm tra tệp có tồn tại không
+    if not os.path.exists(file_path):
+        logger.error(f"Dataset file not found: {file_path}")
+        raise FileNotFoundError(f"Dataset file not found: {file_path}")
+
+    # Tải dữ liệu
+    logger.info(f"Loading dataset from {file_path}")
+    dataset = pd.read_csv(file_path)
+
+    # Kiểm tra dữ liệu rỗng
+    if dataset.empty:
+        logger.error(f"Dataset is empty: {file_path}")
+        raise ValueError(f"Dataset is empty: {file_path}")
+
+    # Chuyển đổi cột thời gian (nếu có) thành định dạng datetime
+    if 'gh_build_started_at' in dataset.columns:
+        dataset['gh_build_started_at'] = pd.to_datetime(dataset['gh_build_started_at'], errors='coerce')
+
+    logger.info(f"Loaded dataset with shape: {dataset.shape}")
+    return dataset
+
+
+def list_available_datasets(data_dir="data/processed/by_project"):
     """
-    Save the time series and labels to a numpy file.
+    Liệt kê tất cả các tệp dataset có sẵn trong thư mục.
 
-    :param sequences: Time series.
-    :param labels: Corresponding label.
-    :param project_name: Project name.
-    :param output_path: Directory to save data.
+    Args:
+        data_dir (str): Thư mục chứa các tệp dữ liệu.
+
+    Returns:
+        list: Danh sách tên các tệp dataset.
     """
-    os.makedirs(output_path, exist_ok=True)
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    data_path = os.path.join(project_root, data_dir)
 
-    sequences_file = os.path.join(output_path, f"{project_name}_sequences.npy")
-    labels_file = os.path.join(output_path, f"{project_name}_labels.npy")
+    if not os.path.exists(data_path):
+        logger.warning(f"Data directory not found: {data_path}")
+        return []
 
-    np.save(sequences_file, sequences)
-    np.save(labels_file, labels)
-
-def process_project_data(project_file, seq_length, output_path):
-    """
-    Process data of a project: divide into time series and save to file.
-
-    :param project_file: Path to the project CSV file.
-    :param seq_length: Length of time series.
-    :param output_path: Directory to save data.
-    """
-    df = pd.read_csv(project_file)
-
-    sequences, labels = create_sequences(df, seq_length)
-
-    project_name = os.path.splitext(os.path.basename(project_file))[0]
-    save_sequences(sequences, labels, project_name, output_path)
-
-if __name__ == "__main__":
-    processed_data_path = "data/processed/"
-    sequences_path = "data/sequences/"
-
-    seq_length = 10
-
-    for file_name in os.listdir(processed_data_path):
-        if file_name.endswith(".csv"):
-            project_file = os.path.join(processed_data_path, file_name)
-            process_project_data(project_file, seq_length, sequences_path)
+    datasets = [f for f in os.listdir(data_path) if f.endswith('.csv')]
+    logger.info(f"Found {len(datasets)} datasets in {data_path}: {datasets}")
+    return datasets
