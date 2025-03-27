@@ -8,7 +8,7 @@ import os
 CONFIG = {
     'NBR_REP': 6,
     'NBR_GEN': 5,
-    'NBR_SOL': 5,
+    'NBR_SOL': 10,
     'MAX_EVAL': 8,
     'WITH_SMOTE': True,
     'HYBRID_OPTION': True
