@@ -1,7 +1,9 @@
+# src/model/single_lstm.py
 import os
 import sys
 import numpy as np
 import pandas as pd
+import logging
 from timeit import default_timer as timer
 from keras.models import Sequential
 from keras.layers import Input, LSTM, Dense, Dropout
@@ -28,12 +30,14 @@ def train_preprocess(dataset_train, time_step):
                     and dataset_train[col].dtype in [np.float64, np.float32, np.int64, np.int32]]
     training_set = dataset_train[feature_cols].values
     y = dataset_train['build_failed'].values
+    y = dataset_train['build_failed'].values
 
     if len(training_set) <= time_step:
         raise ValueError(f"Dataset size ({len(training_set)}) must be larger than time_step ({time_step})")
 
     scaler = MinMaxScaler()
     training_set = scaler.fit_transform(training_set)
+    logger.info(f"Min and Max after scaling: {training_set.min()}, {training_set.max()}")
 
     logging.info("\nClass Distribution BEFORE SMOTE:")
     unique, counts = np.unique(y, return_counts=True)
@@ -72,7 +76,7 @@ def test_preprocess(dataset_train, dataset_test, time_step, scaler):
     
     if len(dataset_total_scaled) < time_step + len(dataset_test):
         raise ValueError("Not enough data to create test sequences with given time_step")
-    
+
     inputs = dataset_total_scaled[len(dataset_total_scaled) - len(dataset_test) - time_step:]
     X_test = np.lib.stride_tricks.sliding_window_view(inputs, (time_step, inputs.shape[1]))[:-1]
     X_test = np.squeeze(X_test, axis=1)
@@ -139,7 +143,7 @@ def evaluate_tuner(tuner_option, train_set):
         'nb_batch': [4, 8, 16, 32, 64],
         'nb_layers': [1, 2, 3, 4],
         'optimizer': ['adam', 'rmsprop'],
-        'time_step': list(range(30, 61))
+        'time_step': list(range(5, 31))
     }
 
     start = timer()
