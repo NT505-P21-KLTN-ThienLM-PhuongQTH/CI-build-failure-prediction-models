@@ -10,3 +10,5 @@ tqdm
 hpsklearn
 scikit-learn
 numpy
+matplotlib
+seaborn
