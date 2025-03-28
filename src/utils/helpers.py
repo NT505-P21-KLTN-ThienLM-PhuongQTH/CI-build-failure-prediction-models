@@ -92,7 +92,3 @@ class Utils:
             train_sets.append(dataset.iloc[:train_end])
             test_sets.append(dataset.iloc[train_end:test_end])
         return train_sets, test_sets
-
-    @staticmethod
-    def save_model(model, path):
-        model.save(path)
