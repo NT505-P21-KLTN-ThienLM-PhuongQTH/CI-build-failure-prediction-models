@@ -1,4 +1,3 @@
-# src/utils/Utils.py
 from sklearn.metrics import f1_score, roc_auc_score, accuracy_score, precision_score, recall_score, roc_curve
 import numpy as np
 import pandas as pd
@@ -71,6 +70,7 @@ class Utils:
         """
         y_pred_probs = model.predict(X, verbose=0) # Silence the output
         threshold = 0.5 if Utils.CONFIG.get('WITH_SMOTE', True) else Utils.get_best_threshold(y_true, y_pred_probs)
+        print(f"Using threshold: {threshold}")
         y_pred = Utils.to_labels(y_pred_probs, threshold)
         return Utils.get_entry(y_true, y_pred)
 
@@ -93,14 +93,6 @@ class Utils:
             test_sets.append(dataset.iloc[train_end:test_end])
         return train_sets, test_sets
 
-    # Add save_model to match single_lstm.py's requirements
     @staticmethod
     def save_model(model, path):
-        """
-        Save the trained model to a file.
-
-        Args:
-            model: Keras model to save
-            path: Path to save the model (including filename)
-        """
         model.save(path)
