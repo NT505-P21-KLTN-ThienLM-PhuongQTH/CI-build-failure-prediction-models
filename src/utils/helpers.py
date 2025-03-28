@@ -80,15 +80,25 @@ class Utils:
 
     @staticmethod
     def online_validation_folds(dataset, start_fold=6, end_fold=11, fold_ratio=0.1):
-        # Split the dataset into train and test sets for online validation
+        if not isinstance(dataset, pd.DataFrame) or dataset.empty:
+            raise ValueError("Dataset must be a non-empty pandas DataFrame")
+        if start_fold >= end_fold or fold_ratio <= 0:
+            raise ValueError("Invalid fold parameters: start_fold must be less than end_fold and fold_ratio must be positive")
+        
+        # Split the dataset into train and test sets for online validation (time-series)
         fold_size = int(len(dataset) * fold_ratio)
+        if fold_size <= 0:
+            raise ValueError("Fold size must be greater than 0")
+        
         train_sets, test_sets = [], []
-
         for i in range(start_fold, end_fold):
             train_end = fold_size * (i - 1)
             test_end = fold_size * i
+            if train_end >= len(dataset):
+                break
             if test_end > len(dataset):
                 test_end = len(dataset)
             train_sets.append(dataset.iloc[:train_end])
             test_sets.append(dataset.iloc[train_end:test_end])
+            print(f"Fold {i}: Train {0}-{train_end}, Test {train_end}-{test_end}")
         return train_sets, test_sets
