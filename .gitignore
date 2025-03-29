@@ -1,10 +1,9 @@
 *.h5
 *.keras
 *.pth
-data/*/*.csv
+/data/raw
 data/*/*.json
 data/*/*.npy
-data/
 dataset/
 __pycache__/
 ci-build/
