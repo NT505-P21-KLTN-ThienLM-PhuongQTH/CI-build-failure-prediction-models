@@ -1,15 +1,14 @@
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, List, Tuple, Any
-
-from ..utils import helpers
-from optimizer import Optimizer
+from helpers import Utils
+from optimization.optimizer import Optimizer
 
 class GARunner:
     def __init__(self, ga_params: Dict[str, Any] = None):
         self.ga_params = ga_params if ga_params is not None else {
-            "population_size": helpers.CONFIG.get('NBR_SOL'),
-            "max_generations": helpers.CONFIG.get('NBR_GEN'),
+            "population_size": Utils.CONFIG.get('NBR_SOL'),
+            "max_generations": Utils.CONFIG.get('NBR_GEN'),
             "retain": 0.7,
             "random_select": 0.1,
             "mutate_chance": 0.1

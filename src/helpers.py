@@ -15,9 +15,9 @@ class Utils:
     }
 
     @staticmethod
-    def get_dataset(file_name):
+    def get_dataset(file_name, dataset_dir="../data/processed"):
         # Load dataset
-        file_path = os.path.join("data", "processed", file_name)
+        file_path = os.path.join(dataset_dir, file_name)
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File {file_path} not found")
         dataset = pd.read_csv(file_path, parse_dates=['gh_build_started_at'], index_col="gh_build_started_at")

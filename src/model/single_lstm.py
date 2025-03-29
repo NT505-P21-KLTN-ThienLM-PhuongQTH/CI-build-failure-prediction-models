@@ -15,7 +15,7 @@ from hpbandster.optimizers import BOHB
 from sklearn.utils.class_weight import compute_class_weight
 
 # Import custom modules
-from ..utils import helpers
+from .. import helpers
 from ..optimization import GA_runner
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -39,10 +39,6 @@ def train_preprocess(dataset_train, time_step):
     unique, counts = np.unique(y, return_counts=True)
     print(dict(zip(unique, counts / len(y))))
 
-    print("\nClass Distribution BEFORE SMOTE:")
-    unique, counts = np.unique(y, return_counts=True)
-    class_dist_before = dict(zip(unique, counts / len(y)))
-    print(class_dist_before)
 
     if helpers.CONFIG.get('WITH_SMOTE', True):
         print("Applying SMOTE...")
@@ -52,9 +48,10 @@ def train_preprocess(dataset_train, time_step):
     else:
         y_smote = y
 
-    print("Class Distribution AFTER SMOTE:")
-    unique, counts = np.unique(y_smote, return_counts=True)
-    print(dict(zip(unique, counts / len(y_smote))))
+    print("\nClass Distribution BEFORE SMOTE:")
+    unique, counts = np.unique(y, return_counts=True)
+    class_dist_before = dict(zip(unique, counts / len(y)))
+    print(class_dist_before)
 
     # Create sequences for LSTM
     X_train = np.lib.stride_tricks.sliding_window_view(training_set, (time_step, training_set.shape[1]))[:-1]
@@ -73,10 +70,10 @@ def test_preprocess(dataset_train, dataset_test, time_step):
     test_data = dataset_test[feature_cols].values
     dataset_total = np.vstack((train_data, test_data))
     y_test = dataset_test['build_failed'].values
-    
+
     if len(dataset_total) < time_step + len(dataset_test):
         raise ValueError("Not enough data for test sequences")
-    
+
     inputs = dataset_total[-len(dataset_test) - time_step:]
     X_test = np.lib.stride_tricks.sliding_window_view(inputs, (time_step, inputs.shape[1]))[:-1]
     X_test = np.squeeze(X_test, axis=1)
@@ -271,32 +268,3 @@ if __name__ == "__main__":
     print(entry_test) # Test results
 
     print(dataset['build_failed'].value_counts(normalize=True))
-
-
-    # dataset_dir = "data/processed/by_project"
-    # project_info = []
-
-    # for filename in os.listdir(dataset_dir):
-    #     if filename.endswith(".csv"):
-    #         dataset = Utils.get_dataset(filename)
-    #         if "build_failed" in dataset.columns:
-    #             total_rows = len(dataset)
-    #             class_ratio = dataset["build_failed"].value_counts(normalize=True).to_dict()
-    #             class_absolute = dataset["build_failed"].value_counts().to_dict()
-
-    #             project_info.append({
-    #                 "project": filename,
-    #                 "rows": total_rows,
-    #                 "class_ratio": class_ratio,
-    #                 "class_absolute": class_absolute
-    #             })
-
-    # top_projects = sorted(project_info, key=lambda x: x["rows"], reverse=True)[:20]
-
-    # for project in top_projects:
-    #     print(f"\n--- Project: {project['project']} ---")
-    #     print(f"Total rows: {project['rows']}")
-    #     print("Class distribution (ratio):")
-    #     print(project["class_ratio"])
-    #     print("Class distribution (absolute):")
-    #     print(project["class_absolute"])
