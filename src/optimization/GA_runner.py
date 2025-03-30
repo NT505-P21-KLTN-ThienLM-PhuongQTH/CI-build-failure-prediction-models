@@ -50,7 +50,7 @@ class GARunner:
             print("Empty population, skipping training")
             return
 
-        with tqdm(total=len(population), desc="Training Population") as pbar:
+        with tqdm(total=len(population), desc="\nTraining Population") as pbar:
             with ThreadPoolExecutor(max_workers=len(population)) as executor:
                 futures = [
                     executor.submit(self._train_solution, sol, fn_train, params_fn, i)
