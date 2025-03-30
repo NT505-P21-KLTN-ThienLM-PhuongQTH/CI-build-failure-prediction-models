@@ -101,8 +101,8 @@ class Utils:
                 test_end = len(dataset)
             train_sets.append(dataset.iloc[:train_end])
             test_sets.append(dataset.iloc[train_end:test_end])
-            if test_sets['build_failed'].sum() == 0:
-                print(f"[Warning] Fold {i} has no failed builds. Skipping...")
-                continue
+            # if test_sets['build_failed'].sum() == 0:
+            #     print(f"[Warning] Fold {i} has no failed builds. Skipping...")
+            #     continue
             print(f"Fold {i}: Train {0}-{train_end}, Test {train_end}-{test_end}")
         return train_sets, test_sets
