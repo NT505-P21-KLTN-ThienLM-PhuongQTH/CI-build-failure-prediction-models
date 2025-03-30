@@ -39,7 +39,7 @@ class GARunner:
         # Train a single solution and handle exceptions.
         try:
             solution.train_model(fn_train, params_fn)
-            print(f"Solution {index} trained")
+            print(f"\nSolution {index} trained")
         except Exception as e:
             print(f"Error training solution {index}: {str(e)}")
             raise

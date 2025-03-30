@@ -8,7 +8,7 @@ class Utils:
     # Move CONFIG to utils for now (can be moved to config.py later)
     CONFIG = {
         'NBR_REP': 6,
-        'NBR_GEN': 15,
+        'NBR_GEN': 5,
         'NBR_SOL': 10,
         'MAX_EVAL': 8,
         'WITH_SMOTE': True,
