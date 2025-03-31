@@ -10,3 +10,4 @@ ci-build/
 ci_build_failure_prediction.egg-info
 dist/
 build/
+.idea
