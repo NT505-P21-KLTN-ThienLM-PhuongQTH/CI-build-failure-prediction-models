@@ -36,10 +36,10 @@ class Utils:
         return thresholds[ix]
 
     @staticmethod
-    def get_entry(y_true, y_pred):
+    def get_entry(y_true, y_pred_probs, y_pred):
         # Get metrics for a single entry
         metrics = {}
-        metrics["AUC"] = roc_auc_score(y_true, y_pred)
+        metrics["AUC"] = roc_auc_score(y_true, y_pred_probs)
         metrics["accuracy"] = accuracy_score(y_true, y_pred)
         try:
             metrics["precision"] = precision_score(y_true, y_pred)
@@ -54,24 +54,12 @@ class Utils:
 
     @staticmethod
     def predict_lstm(model, X, y_true):
-        """
-        Predict and evaluate using an LSTM model.
-
-        Args:
-            model: Trained model
-            X: Input data
-            y_true: True labels
-            threshold: Decision threshold
-
-        Returns:
-            Metrics dictionary
-        """
         y_pred_probs = model.predict(X, verbose=0) # Silence the output
         threshold = 0.5 if Utils.CONFIG.get('WITH_SMOTE', True) else Utils.get_best_threshold(y_true, y_pred_probs)
         # threshold = Utils.get_best_threshold(y_true, y_pred_probs)
         print(f"\nUsing threshold: {threshold}")
         y_pred = Utils.to_labels(y_pred_probs, threshold)
-        return Utils.get_entry(y_true, y_pred)
+        return Utils.get_entry(y_true, y_pred_probs, y_pred)
 
     @staticmethod
     def is_int(n):
