@@ -1,13 +1,10 @@
 *.h5
 *.keras
 *.pth
-/data/raw
+data/raw
 data/*/*.json
 data/*/*.npy
 dataset/
 __pycache__/
 ci-build/
-ci_build_failure_prediction.egg-info
-dist/
-build/
 .idea

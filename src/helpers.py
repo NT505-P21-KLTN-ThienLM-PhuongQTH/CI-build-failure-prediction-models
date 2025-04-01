@@ -7,10 +7,8 @@ import os
 class Utils:
     # Move CONFIG to utils for now (can be moved to config.py later)
     CONFIG = {
-        'NBR_REP': 6,
-        'NBR_GEN': 5,
-        'NBR_SOL': 10,
-        'MAX_EVAL': 8,
+        'NBR_GEN': 3,
+        'NBR_SOL': 5,
         'WITH_SMOTE': True,
     }
 
@@ -69,8 +67,8 @@ class Utils:
             Metrics dictionary
         """
         y_pred_probs = model.predict(X, verbose=0) # Silence the output
-        # threshold = 0.5 if Utils.CONFIG.get('WITH_SMOTE', True) else Utils.get_best_threshold(y_true, y_pred_probs)
-        threshold = Utils.get_best_threshold(y_true, y_pred_probs)
+        threshold = 0.5 if Utils.CONFIG.get('WITH_SMOTE', True) else Utils.get_best_threshold(y_true, y_pred_probs)
+        # threshold = Utils.get_best_threshold(y_true, y_pred_probs)
         print(f"\nUsing threshold: {threshold}")
         y_pred = Utils.to_labels(y_pred_probs, threshold)
         return Utils.get_entry(y_true, y_pred)
