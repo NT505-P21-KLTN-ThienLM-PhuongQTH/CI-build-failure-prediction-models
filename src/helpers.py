@@ -7,8 +7,8 @@ import os
 class Utils:
     # Move CONFIG to utils for now (can be moved to config.py later)
     CONFIG = {
-        'NBR_GEN': 3,
-        'NBR_SOL': 5,
+        'NBR_GEN': 2,
+        'NBR_SOL': 2,
         'WITH_SMOTE': True,
     }
 
