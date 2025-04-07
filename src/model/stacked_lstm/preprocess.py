@@ -1,0 +1,66 @@
+import numpy as np
+from imblearn.over_sampling import SMOTE
+from src.helpers import Utils
+
+
+def train_preprocess(dataset_train, time_step):
+    feature_cols = [col for col in dataset_train.columns
+                    if col not in ['build_failed', 'gh_build_started_at', 'gh_project_name']
+                    and dataset_train[col].dtype in [np.float64, np.float32, np.int64, np.int32]]
+    training_set = dataset_train[feature_cols].values
+    y = dataset_train['build_failed'].values
+
+    # Limit time_step to the length of the training set
+    if len(training_set) < time_step:
+        print(f"Adjusting time_step from {time_step} to {len(training_set) - 1}")
+        time_step = max(1, len(training_set) - 1)
+
+    if Utils.CONFIG['WITH_SMOTE'] and len(np.unique(y)) > 1:
+        print("\nClass Distribution BEFORE SMOTE:")
+        unique, counts = np.unique(y, return_counts=True)
+        dist = dict(zip(unique, counts / len(y)))
+        print(dist)
+
+    if Utils.CONFIG['WITH_SMOTE']:
+        print("\nApplying SMOTE...")
+        smote = SMOTE(random_state=42)
+        X, y_smote = smote.fit_resample(training_set, y)
+        training_set = X
+    else:
+        y_smote = y
+
+    if Utils.CONFIG['WITH_SMOTE'] and len(np.unique(y_smote)) > 1:
+        print("Class Distribution AFTER SMOTE:")
+        unique, counts = np.unique(y_smote, return_counts=True)
+        dist = dict(zip(unique, counts / len(y_smote)))
+        print(dist)
+
+    try:
+        X_train = np.lib.stride_tricks.sliding_window_view(
+            training_set, (time_step, training_set.shape[1])
+        )[:-1]
+        X_train = np.squeeze(X_train, axis=1)
+        y_train = y_smote[time_step:]
+    except Exception as e:
+        raise RuntimeError(f"Error during sliding window creation: {e}")
+    print(f"X_train shape: {X_train.shape}, y_train shape: {y_train.shape}")
+    return X_train, y_train
+
+
+def test_preprocess(dataset_train, dataset_test, time_step):
+    feature_cols = [col for col in dataset_train.columns
+                    if col not in ['build_failed', 'gh_build_started_at', 'gh_project_name']
+                    and dataset_train[col].dtype in [np.float64, np.float32, np.int64, np.int32]]
+    train_data = dataset_train[feature_cols].values
+    test_data = dataset_test[feature_cols].values
+    dataset_total = np.vstack((train_data, test_data))
+    y_test = dataset_test['build_failed'].values
+
+    if len(dataset_total) < time_step + len(dataset_test):
+        raise ValueError("Not enough data for test sequences")
+
+    inputs = dataset_total[-len(dataset_test) - time_step:]
+    X_test = np.lib.stride_tricks.sliding_window_view(inputs, (time_step, inputs.shape[1]))[:-1]
+    X_test = np.squeeze(X_test, axis=1)
+    print(f"X_test shape: {X_test.shape}, y_test shape: {y_test.shape}")
+    return X_test, y_test

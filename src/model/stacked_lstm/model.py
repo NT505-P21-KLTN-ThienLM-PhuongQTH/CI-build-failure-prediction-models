@@ -1,0 +1,62 @@
+from timeit import default_timer as timer
+import numpy as np
+from keras.models import Sequential
+from keras.layers import LSTM, Dense, Dropout
+from keras.callbacks import EarlyStopping
+from sklearn.utils.class_weight import compute_class_weight
+from src.helpers import Utils
+from .preprocess import train_preprocess
+
+
+def construct_lstm_model(network_params, train_set):
+    start_time = timer()
+    # Construct and train the LSTM model.
+    X_train, y_train = train_preprocess(train_set, network_params["time_step"])
+    drop = network_params["drop_proba"]
+
+    model = Sequential()
+
+    # First LSTM layer with input shape
+    model.add(LSTM(units=network_params["nb_units"],
+                   return_sequences=(network_params["nb_layers"] > 1),
+                   input_shape=(X_train.shape[1], X_train.shape[2])))
+    model.add(Dropout(drop))
+
+    # Additional LSTM layers if specified
+    for i in range(1, network_params["nb_layers"]):
+        is_last = (i == network_params["nb_layers"] - 1)
+        model.add(LSTM(units=network_params["nb_units"], return_sequences=not is_last))
+        model.add(Dropout(drop))
+
+    # Output layer
+    model.add(Dense(1, activation='sigmoid'))
+
+    # print(f"Model summary:\n{model.summary()}")
+
+    model.compile(optimizer=network_params["optimizer"], loss='binary_crossentropy', metrics=["accuracy"])
+    es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=10)
+
+    # Compute class weights
+    class_weights = compute_class_weight('balanced', classes=np.array([0, 1]), y=y_train)
+    class_weight_dict = {0: class_weights[0], 1: class_weights[1]}
+
+    try:
+        history = model.fit(X_train, y_train, epochs=network_params["nb_epochs"],
+                            batch_size=network_params["nb_batch"], validation_split=0.2,
+                            verbose=0, callbacks=[es], class_weight=class_weight_dict)
+        validation_loss = np.amin(history.history['val_loss'])
+    except Exception as e:
+        print(f"Error during model training: {e}")
+        return {"validation_loss": float('inf'), "model": None, "entry": {'F1': 0, 'validation_loss': float('inf')}}
+
+    entry = Utils.predict_lstm(model, X_train, y_train)
+    entry['validation_loss'] = validation_loss
+
+    end_time = timer()
+    print(f"\nTraining time: {end_time - start_time:.2f} seconds")
+
+    # model_path = os.path.join(MODEL_DIR, f"lstm_{network_params['nb_units']}_{network_params['nb_layers']}.keras")
+    # model.save(model_path)
+    # print(f"Model saved: {model_path}")
+
+    return {'validation_loss': validation_loss, 'model': model, 'entry': entry}
