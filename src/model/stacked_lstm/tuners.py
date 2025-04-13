@@ -72,7 +72,7 @@ def evaluate_tuner(tuner_option, train_set):
 
     if tuner_option == "ga":
         ga_runner = GARunner()
-        best_params, best_model, entry_train = ga_runner.generate(all_possible_params, construct_lstm_model, data)
+        best_params, best_model, entry_train, history = ga_runner.generate(all_possible_params, construct_lstm_model, data)
 
     elif tuner_option == "tpe":
         param_space = {k: hp.choice(k, v) for k, v in all_possible_params.items()}
@@ -145,4 +145,4 @@ def evaluate_tuner(tuner_option, train_set):
     # best_model_path = os.path.join(MODEL_DIR, f"best_lstm_{proj_name}_fold{fold_idx}_iter{iter_idx}.keras")
     # best_model.save(best_model_path)
     # print(f"Best model saved at: {best_model_path}")
-    return entry_train
+    return {"entry": entry_train, "params": best_params, "model": best_model, "history": history}

@@ -78,7 +78,7 @@ class GARunner:
         for i, sol in enumerate(top_solutions, 1):
             print(f"Top {i} solution: Score = {sol.score:.4f}, Params = {sol.params}, Entry = {sol.entry}")
 
-    def generate(self, all_possible_params: Dict[str, List], fn_train: Callable, params_fn: Dict) -> Tuple[Dict, Any, Dict]:
+    def generate(self, all_possible_params: Dict[str, List], fn_train: Callable, params_fn: Dict) -> Tuple[Dict, Any, Dict, Any]:
         # Generate the best parameters using a genetic algorithm.
         if not all_possible_params or not isinstance(all_possible_params, dict):
             raise ValueError("all_possible_params must be a non-empty dictionary")
@@ -109,4 +109,4 @@ class GARunner:
         self.print_top_solutions(population)
         best_solution = population[0]
         print(f"\nBest Solution: Score = {best_solution.score:.4f}, Params = {best_solution.params}")
-        return best_solution.params, best_solution.model, best_solution.entry
+        return best_solution.params, best_solution.model, best_solution.entry, best_solution.history

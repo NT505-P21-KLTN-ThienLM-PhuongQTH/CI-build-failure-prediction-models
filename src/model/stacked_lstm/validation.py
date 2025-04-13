@@ -2,9 +2,11 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 from .model import construct_lstm_model
-from .preprocess import test_preprocess
+from .preprocess import test_preprocess, train_preprocess, apply_smote
 from .tuners import evaluate_tuner, CONFIG
 from src.helpers import Utils
+from ...data.visualization import plot_class_distribution, plot_roc_curve, plot_training_history
+import numpy as np
 
 MODEL_DIR = "../models/stacked_lstm"
 COLUMNS_RES = ["proj", "algo", "iter", "AUC", "accuracy", "F1", "exp"]
@@ -77,10 +79,44 @@ def run_online_validation(tuner="ga", dataset_dir="../data/processed"):
         best_f1 = -1
         best_model_path = None
         train_sets, test_sets = Utils.online_validation_folds(dataset)
+
+        # Vẽ phân bố lớp trước khi cân bằng
+        print(f"Plotting class distribution BEFORE balancing for {file_name}...")
+        plot_class_distribution(train_sets, test_sets, proj_name=file_name)
+        # Lưu các train_sets đã cân bằng
+        balanced_train_sets = []
+
         for fold_idx, (train_set, test_set) in enumerate(zip(train_sets, test_sets)):
             for iteration in range(1, CONFIG['NBR_REP'] + 1):
                 print(f"\n[Proj {file_name} | Fold {fold_idx + 1} | Iter {iteration}] Training...")
                 entry_train = evaluate_tuner(tuner, train_set)
+
+                history = entry_train.get("history")
+                print(f"History object: {history}")
+                if history:
+                    # Đường dẫn để lưu đồ thị loss và accuracy
+                    save_path = os.path.join(MODEL_DIR,
+                                             f"training_history_{file_name}_fold_{fold_idx + 1}_iter_{iteration}.png")
+                    print(f"Plotting training history for {file_name} Fold {fold_idx + 1} Iter {iteration}...")
+                    plot_training_history(history, file_name, fold_idx, save_path=save_path)
+                else:
+                    print("No training history available to plot.")
+
+                # Lấy dữ liệu đã cân bằng trước khi tạo chuỗi thời gian
+                feature_cols = [col for col in train_set.columns
+                                if col not in ['build_failed', 'gh_build_started_at', 'gh_project_name']
+                                and train_set[col].dtype in [np.float64, np.float32, np.int64, np.int32]]
+                training_set = train_set[feature_cols].values
+                y = train_set['build_failed'].values
+                X_smote, y_smote = apply_smote(training_set, y)
+
+                # Tạo DataFrame từ dữ liệu cân bằng
+                balanced_df = pd.DataFrame(X_smote, columns=feature_cols)
+                balanced_df['build_failed'] = y_smote
+
+                if iteration == 1:  # Chỉ lưu ở lần lặp đầu tiên để tránh trùng lặp
+                    balanced_train_sets.append(balanced_df)
+
                 entry_train.update({
                     "iter": iteration, "proj": f"proj{file_name}", "exp": fold_idx + 1, "algo": MODEL_NAME
                 })
@@ -90,6 +126,12 @@ def run_online_validation(tuner="ga", dataset_dir="../data/processed"):
                 best_params = entry_train["params"]
                 X_test, y_test = test_preprocess(train_set, test_set, best_params["time_step"])
                 entry_test = Utils.predict_lstm(best_model, X_test, y_test)
+
+                y_pred_probs = best_model.predict(X_test).flatten()
+                print(f"Plotting ROC curve for {file_name} Fold {fold_idx + 1}...")
+                save_path = os.path.join(MODEL_DIR, f"roc_curve_{file_name}_fold_{fold_idx + 1}.png")
+                plot_roc_curve(y_test, y_pred_probs, file_name, fold_idx, save_path=save_path)
+
                 entry_test.update({
                     "iter": iteration, "proj": file_name, "exp": fold_idx + 1, "algo": MODEL_NAME
                 })
@@ -99,6 +141,13 @@ def run_online_validation(tuner="ga", dataset_dir="../data/processed"):
                     best_model.save(best_model_path)
                 print(f"Test metrics: {entry_test}")
                 all_test_entries.append(entry_test)
+
+                # Vẽ phân bố lớp sau khi cân bằng
+                print(f"Plotting class distribution AFTER balancing for {file_name}...")
+                num_folds = min(len(balanced_train_sets), len(test_sets))
+                plot_class_distribution(balanced_train_sets[:num_folds], test_sets[:num_folds],
+                                        proj_name=file_name + " (Balanced)")
+
         print(f"Best model for {file_name} saved at: {best_model_path}, F1: {best_f1}")
 
     test_df = pd.DataFrame(all_test_entries)

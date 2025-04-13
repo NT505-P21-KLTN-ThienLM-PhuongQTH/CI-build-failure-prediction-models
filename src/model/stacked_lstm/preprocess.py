@@ -3,6 +3,35 @@ from imblearn.over_sampling import SMOTE
 from src.helpers import Utils
 
 
+def apply_smote(training_set, y):
+    """
+    Apply SMOTE to balance the dataset if configured to do so.
+
+    Args:
+        training_set (np.ndarray): Feature matrix for training.
+        y (np.ndarray): Target labels.
+
+    Returns:
+        tuple: (balanced training_set, balanced y)
+    """
+    if Utils.CONFIG['WITH_SMOTE'] and len(np.unique(y)) > 1:
+        print("\nClass Distribution BEFORE SMOTE:")
+        unique, counts = np.unique(y, return_counts=True)
+        dist = dict(zip(unique, counts / len(y)))
+        print(dist)
+
+        print("\nApplying SMOTE...")
+        smote = SMOTE(random_state=42)
+        X_smote, y_smote = smote.fit_resample(training_set, y)
+
+        print("Class Distribution AFTER SMOTE:")
+        unique, counts = np.unique(y_smote, return_counts=True)
+        dist = dict(zip(unique, counts / len(y_smote)))
+        print(dist)
+        return X_smote, y_smote
+    else:
+        return training_set, y
+
 def train_preprocess(dataset_train, time_step):
     feature_cols = [col for col in dataset_train.columns
                     if col not in ['build_failed', 'gh_build_started_at', 'gh_project_name']
@@ -15,25 +44,7 @@ def train_preprocess(dataset_train, time_step):
         print(f"Adjusting time_step from {time_step} to {len(training_set) - 1}")
         time_step = max(1, len(training_set) - 1)
 
-    if Utils.CONFIG['WITH_SMOTE'] and len(np.unique(y)) > 1:
-        print("\nClass Distribution BEFORE SMOTE:")
-        unique, counts = np.unique(y, return_counts=True)
-        dist = dict(zip(unique, counts / len(y)))
-        print(dist)
-
-    if Utils.CONFIG['WITH_SMOTE']:
-        print("\nApplying SMOTE...")
-        smote = SMOTE(random_state=42)
-        X, y_smote = smote.fit_resample(training_set, y)
-        training_set = X
-    else:
-        y_smote = y
-
-    if Utils.CONFIG['WITH_SMOTE'] and len(np.unique(y_smote)) > 1:
-        print("Class Distribution AFTER SMOTE:")
-        unique, counts = np.unique(y_smote, return_counts=True)
-        dist = dict(zip(unique, counts / len(y_smote)))
-        print(dist)
+    training_set, y_smote = apply_smote(training_set, y)
 
     try:
         X_train = np.lib.stride_tricks.sliding_window_view(

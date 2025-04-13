@@ -1,7 +1,7 @@
 from timeit import default_timer as timer
 import numpy as np
 from keras.models import Sequential
-from keras.layers import LSTM, Dense, Dropout
+from keras.layers import LSTM, Dense, Dropout, Input
 from keras.callbacks import EarlyStopping
 from sklearn.utils.class_weight import compute_class_weight
 from src.helpers import Utils
@@ -16,10 +16,12 @@ def construct_lstm_model(network_params, train_set):
 
     model = Sequential()
 
+    # Thêm lớp Input thay vì truyền input_shape vào LSTM
+    model.add(Input(shape=(X_train.shape[1], X_train.shape[2])))
+
     # First LSTM layer with input shape
     model.add(LSTM(units=network_params["nb_units"],
-                   return_sequences=(network_params["nb_layers"] > 1),
-                   input_shape=(X_train.shape[1], X_train.shape[2])))
+                   return_sequences=(network_params["nb_layers"] > 1)))
     model.add(Dropout(drop))
 
     # Additional LSTM layers if specified
@@ -59,4 +61,4 @@ def construct_lstm_model(network_params, train_set):
     # model.save(model_path)
     # print(f"Model saved: {model_path}")
 
-    return {'validation_loss': validation_loss, 'model': model, 'entry': entry}
+    return {'validation_loss': validation_loss, 'model': model, 'entry': entry, 'history': history}

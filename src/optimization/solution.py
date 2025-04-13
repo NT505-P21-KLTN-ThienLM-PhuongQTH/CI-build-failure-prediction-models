@@ -9,6 +9,7 @@ class Solution:
         self.score = 0.0
         self.model = None
         self.create_random()
+        self.history = None
 
     def create_random(self):
         # Generate random hyperparameters from the provided ranges.
@@ -25,6 +26,7 @@ class Solution:
             self.model = res['model']
             self.entry = res['entry']
             self.score = self.entry.get(metric, 0.0)  # Default to 0.0 if missing
+            self.history = res.get("history")
 
     def print_solution(self):
         # Print the solution's hyperparameters and score.

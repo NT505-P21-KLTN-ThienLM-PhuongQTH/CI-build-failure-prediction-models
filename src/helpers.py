@@ -1,4 +1,5 @@
-from sklearn.metrics import f1_score, roc_auc_score, accuracy_score, precision_score, recall_score, roc_curve
+from sklearn.metrics import f1_score, roc_auc_score, accuracy_score, precision_score, recall_score, roc_curve, \
+    average_precision_score, precision_recall_curve
 import numpy as np
 import pandas as pd
 import warnings
@@ -28,12 +29,29 @@ class Utils:
         return (pos_probs >= threshold).astype(int)
 
     @staticmethod
-    def get_best_threshold(y_true, y_pred):
-        # Find the best threshold for the ROC curve
-        fpr, tpr, thresholds = roc_curve(y_true, y_pred)
-        gmeans = np.sqrt(tpr * (1 - fpr)) # Geometric mean for balanced threshold
-        ix = np.argmax(gmeans)
-        return thresholds[ix]
+    def get_best_threshold(y_true, y_pred_probs, metric="f1"):
+        """
+        Tìm ngưỡng tối ưu dựa trên F1-score hoặc một metric khác.
+
+        Parameters:
+        - y_true: Nhãn thực tế (ground truth).
+        - y_pred_probs: Xác suất dự đoán cho lớp positive (class 1).
+        - metric: Metric để tối ưu hóa, mặc định là "f1".
+
+        Returns:
+        - best_threshold: Ngưỡng tối ưu.
+        """
+        precision, recall, thresholds = precision_recall_curve(y_true, y_pred_probs)
+
+        # Tính F1-score cho từng ngưỡng
+        f1_scores = 2 * (precision * recall) / (precision + recall + 1e-10)  # Thêm 1e-10 để tránh chia cho 0
+
+        # Tìm ngưỡng có F1-score cao nhất
+        best_idx = np.argmax(f1_scores)
+        best_threshold = thresholds[best_idx]
+
+        print(f"Best threshold (max F1): {best_threshold:.4f}, F1-score: {f1_scores[best_idx]:.4f}")
+        return best_threshold
 
     @staticmethod
     def get_entry(y_true, y_pred_probs, y_pred):
@@ -41,6 +59,7 @@ class Utils:
         metrics = {}
         metrics["AUC"] = roc_auc_score(y_true, y_pred_probs)
         metrics["accuracy"] = accuracy_score(y_true, y_pred)
+        metrics["PR_AUC"] = average_precision_score(y_true, y_pred_probs)
         try:
             metrics["precision"] = precision_score(y_true, y_pred)
             metrics["recall"] = recall_score(y_true, y_pred)
@@ -55,7 +74,7 @@ class Utils:
     @staticmethod
     def predict_lstm(model, X, y_true):
         y_pred_probs = model.predict(X, verbose=0) # Silence the output
-        threshold = 0.5 if Utils.CONFIG.get('WITH_SMOTE', True) else Utils.get_best_threshold(y_true, y_pred_probs)
+        threshold = Utils.get_best_threshold(y_true, y_pred_probs)
         # threshold = Utils.get_best_threshold(y_true, y_pred_probs)
         print(f"\nUsing threshold: {threshold}")
         y_pred = Utils.to_labels(y_pred_probs, threshold)
@@ -66,29 +85,37 @@ class Utils:
         return isinstance(n, int)
 
     @staticmethod
-    def online_validation_folds(dataset, start_fold=6, end_fold=11, fold_ratio=0.1):
-        if not isinstance(dataset, pd.DataFrame) or dataset.empty:
-            raise ValueError("Dataset must be a non-empty pandas DataFrame")
-        if start_fold >= end_fold or fold_ratio <= 0:
-            raise ValueError("Invalid fold parameters: start_fold must be less than end_fold and fold_ratio must be positive")
-        
-        # Split the dataset into train and test sets for online validation (time-series)
-        fold_size = int(len(dataset) * fold_ratio)
-        if fold_size <= 0:
-            raise ValueError("Fold size must be greater than 0")
-        
-        train_sets, test_sets = [], []
-        for i in range(start_fold, end_fold):
-            train_end = fold_size * (i - 1)
-            test_end = fold_size * i
-            if train_end >= len(dataset):
+    def online_validation_folds(dataset, n_folds=10, window_size=1000, step_size=500):
+        """
+        Chia dữ liệu time series thành các fold với cửa sổ trượt.
+
+        Args:
+            dataset: DataFrame chứa dữ liệu time series, đã được sắp xếp theo thời gian.
+            n_folds: Số lượng fold.
+            window_size: Kích thước cửa sổ huấn luyện.
+            step_size: Bước trượt giữa các fold.
+
+        Returns:
+            train_sets, test_sets: List các tập huấn luyện và tập validation.
+        """
+        dataset = dataset.sort_values(by='gh_build_started_at')  # Đảm bảo dữ liệu được sắp xếp theo thời gian
+        total_length = len(dataset)
+        train_sets = []
+        test_sets = []
+
+        for fold in range(n_folds):
+            start_idx = fold * step_size
+            train_end_idx = start_idx + window_size
+            test_end_idx = train_end_idx + (total_length // n_folds)
+
+            if test_end_idx > total_length:
                 break
-            if test_end > len(dataset):
-                test_end = len(dataset)
-            train_sets.append(dataset.iloc[:train_end])
-            test_sets.append(dataset.iloc[train_end:test_end])
-            # if test_sets['build_failed'].sum() == 0:
-            #     print(f"[Warning] Fold {i} has no failed builds. Skipping...")
-            #     continue
-            print(f"Fold {i}: Train {0}-{train_end}, Test {train_end}-{test_end}")
+
+            train_set = dataset.iloc[start_idx:train_end_idx]
+            test_set = dataset.iloc[train_end_idx:test_end_idx]
+
+            print(f"Fold {fold + 1}: Train {start_idx}-{train_end_idx}, Test {train_end_idx}-{test_end_idx}")
+            train_sets.append(train_set)
+            test_sets.append(test_set)
+
         return train_sets, test_sets

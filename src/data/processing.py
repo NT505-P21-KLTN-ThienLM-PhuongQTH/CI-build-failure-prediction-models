@@ -5,6 +5,8 @@ import os
 import glob
 from collections import defaultdict
 
+from src.data.feature_analysis import aggregate_feature_importance
+
 # Định nghĩa dtype cho các cột đặc biệt
 DTYPE_SPEC = {
     "git_diff_src_churn": "float32",
@@ -155,6 +157,73 @@ def combine_datasets(folder_path, output_path="../data/combined/combined_travist
         print("Không có DataFrame nào được xử lý thành công.")
         return None
 
+def add_build_features(df):
+    """Thêm các feature mới liên quan đến build."""
+    df = df.copy()
+
+    # Sắp xếp theo thời gian để tính các feature liên quan đến lịch sử
+    df = df.sort_values(['gh_project_name', 'gh_build_started_at'])
+    df['gh_build_started_at'] = pd.to_datetime(df['gh_build_started_at'])
+
+    # 1. year_of_start, month_of_start, day_of_start, hour_of_start
+    df['year_of_start'] = df['gh_build_started_at'].dt.year
+    df['month_of_start'] = df['gh_build_started_at'].dt.month
+    df['day_of_start'] = df['gh_build_started_at'].dt.day
+    df['hour_of_start'] = df['gh_build_started_at'].dt.hour
+
+    # 2. elapsed_days_last_build: Số ngày kể từ build trước
+    df['elapsed_days_last_build'] = df.groupby('gh_project_name')['gh_build_started_at'].diff().dt.total_seconds() / (
+                24 * 3600)
+    df['elapsed_days_last_build'] = df['elapsed_days_last_build'].fillna(0)
+
+    # 3. same_committer: Committer có giống build trước không (dùng gh_by_core_team_member)
+    df['prev_committer'] = df.groupby('gh_project_name')['gh_by_core_team_member'].shift(1)
+    df['same_committer'] = (df['gh_by_core_team_member'] == df['prev_committer']).astype(int)
+    df['same_committer'] = df['same_committer'].fillna(0)  # Điền 0 cho build đầu tiên
+
+    # 4. proj_fail_rate_history: Tỷ lệ thất bại lịch sử của dự án
+    df['build_failed'] = df['tr_status'].map({'passed': 0, 'failed': 1, 'errored': 1})
+    df['proj_fail_rate_history'] = df.groupby('gh_project_name')['build_failed'].expanding().mean().reset_index(level=0,
+                                                                                                                drop=True)
+
+    # 5. proj_fail_rate_recent: Tỷ lệ thất bại gần đây (10 build trước)
+    df['proj_fail_rate_recent'] = df.groupby('gh_project_name')['build_failed'].rolling(window=10,
+                                                                                        min_periods=1).mean().reset_index(
+        level=0, drop=True)
+
+    # 6. comm_fail_rate_history: Tỷ lệ thất bại lịch sử của committer
+    df['comm_fail_rate_history'] = df.groupby('gh_by_core_team_member')['build_failed'].expanding().mean().reset_index(
+        level=0, drop=True)
+
+    # 7. comm_fail_rate_recent: Tỷ lệ thất bại gần đây của committer (10 build trước)
+    df['comm_fail_rate_recent'] = df.groupby('gh_by_core_team_member')['build_failed'].rolling(window=10,
+                                                                                               min_periods=1).mean().reset_index(
+        level=0, drop=True)
+
+    # 8. comm_avg_experience: Số build trung bình của committer (dùng số lần xuất hiện)
+    comm_experience = df.groupby('gh_by_core_team_member').cumcount() + 1
+    df['comm_avg_experience'] = comm_experience
+
+    # 9. totalNumberOfRevisions: Tổng số commit trên các file được chạm tới
+    df['totalNumberOfRevisions'] = df['gh_num_commits_on_files_touched']
+
+    # 10. no_config_edited: Có chỉnh sửa config file không (giả định dựa trên gh_diff_doc_files)
+    df['no_config_edited'] = (df['gh_diff_doc_files'] > 0).astype(int)
+
+    # 11. num_files_edited: Tổng số file chỉnh sửa
+    df['num_files_edited'] = df[['gh_diff_files_added', 'gh_diff_files_deleted', 'gh_diff_files_modified']].sum(axis=1)
+
+    # 12. num_distinct_authors: Số tác giả khác nhau (giả định 1 committer/build, dùng groupby cumcount)
+    df['num_distinct_authors'] = df.groupby('tr_build_id')['gh_by_core_team_member'].transform('nunique')
+
+    # 13. prev_build_result: Kết quả build trước
+    df['prev_build_result'] = df.groupby('gh_project_name')['build_failed'].shift(1).fillna(0)
+
+    # 14. day_week: Ngày trong tuần
+    df['day_week'] = df['gh_build_started_at'].dt.dayofweek
+
+    return df
+
 def load_data(file_path):
     """Tải dữ liệu từ CSV với dtype cụ thể."""
     df = pd.read_csv(file_path, dtype=DTYPE_SPEC, low_memory=False)
@@ -252,6 +321,34 @@ def encode_cyclical_time_features(df, columns, periods):
             df_encoded[f'{col}_sin'] = np.sin(2 * np.pi * df_encoded[col] / period)
             df_encoded[f'{col}_cos'] = np.cos(2 * np.pi * df_encoded[col] / period)
     return df_encoded
+
+
+def drop_low_importance_features(X, importance_df, threshold=0.001):
+    """
+    Loại bỏ các feature có Average_Importance nhỏ hơn ngưỡng từ DataFrame.
+
+    Parameters:
+    - X (pd.DataFrame): Dữ liệu đầu vào (features).
+    - importance_df (pd.DataFrame): DataFrame chứa cột 'Feature' và 'Average_Importance'.
+    - threshold (float): Ngưỡng để xác định importance xấp xỉ 0 (mặc định 0.01).
+
+    Returns:
+    - pd.DataFrame: DataFrame đã loại bỏ các feature có importance xấp xỉ 0.
+    - list: Danh sách các feature bị loại bỏ.
+    """
+    features_to_drop = importance_df[importance_df['Average_Importance'] < threshold]['Feature'].tolist()
+
+    # In danh sách feature bị loại bỏ
+    if features_to_drop:
+        print("Các feature có importance xấp xỉ 0 (dưới ngưỡng", threshold, ") bị loại bỏ:")
+        for feature in features_to_drop:
+            print(feature)
+    else:
+        print("Không có feature nào có importance xấp xỉ 0 (dưới ngưỡng", threshold, ").")
+
+    # Loại bỏ feature khỏi X
+    X_filtered = X.drop(columns=features_to_drop)
+    return X_filtered, features_to_drop
 
 def save_projects_to_files(df, output_dir="../data/processed", project_column='gh_project_name'):
     """Lưu từng dự án thành file CSV."""
