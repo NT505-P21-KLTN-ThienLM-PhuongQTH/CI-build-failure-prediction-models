@@ -19,11 +19,16 @@ def run_online_validation(tuner="ga", dataset_dir="dataset"):
                 print(f"[{file_name} | Fold {fold_idx+1} | Iter {iteration}] Training...")
 
                 entry_train = evaluate_tuner(tuner, train_set)
+                X_train_eval, y_train_eval = test_preprocess(train_set, train_set, best_params["time_step"])
+                train_metrics = Utils.predict_lstm(best_model, X_train_eval, y_train_eval)
                 entry_train.update({
                     "iter": iteration,
                     "proj": file_name,
                     "exp": fold_idx + 1,
-                    "algo": MODEL_NAME
+                    "algo": MODEL_NAME,
+                    "AUC": train_metrics["AUC"],
+                    "accuracy": train_metrics["accuracy"],
+                    "F1": train_metrics["F1"],
                 })
                 all_train_entries.append(entry_train)
 
@@ -60,10 +65,16 @@ def run_cross_project_validation(tuner="ga", bellwether="jruby.csv", dataset_dir
         best_model = entry_train["model"]
         best_params = entry_train["params"]
 
+        X_train_eval, y_train_eval = test_preprocess(train_set, train_set, best_params["time_step"])
+        train_metrics = Utils.predict_lstm(best_model, X_train_eval, y_train_eval)
+
         entry_train.update({
             "iter": iteration,
             "proj": bellwether,
-            "algo": MODEL_NAME
+            "algo": MODEL_NAME,
+            "AUC": train_metrics["AUC"],
+            "accuracy": train_metrics["accuracy"],
+            "F1": train_metrics["F1"],
         })
         all_train_entries.append(entry_train)
 

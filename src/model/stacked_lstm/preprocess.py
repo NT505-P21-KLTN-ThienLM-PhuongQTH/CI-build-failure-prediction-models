@@ -1,5 +1,7 @@
 import numpy as np
 from imblearn.over_sampling import SMOTE
+
+from src.data.feature_analysis import prepare_features, scale_features
 from src.helpers import Utils
 
 
@@ -33,11 +35,10 @@ def apply_smote(training_set, y):
         return training_set, y
 
 def train_preprocess(dataset_train, time_step):
-    feature_cols = [col for col in dataset_train.columns
-                    if col not in ['build_failed', 'gh_build_started_at', 'gh_project_name']
-                    and dataset_train[col].dtype in [np.float64, np.float32, np.int64, np.int32]]
-    training_set = dataset_train[feature_cols].values
-    y = dataset_train['build_failed'].values
+    X, y = prepare_features(dataset_train, target_column='build_failed')
+    # X_scaled, _ = scale_features(X)
+
+    training_set = X.values
 
     # Limit time_step to the length of the training set
     if len(training_set) < time_step:
@@ -59,13 +60,13 @@ def train_preprocess(dataset_train, time_step):
 
 
 def test_preprocess(dataset_train, dataset_test, time_step):
-    feature_cols = [col for col in dataset_train.columns
-                    if col not in ['build_failed', 'gh_build_started_at', 'gh_project_name']
-                    and dataset_train[col].dtype in [np.float64, np.float32, np.int64, np.int32]]
-    train_data = dataset_train[feature_cols].values
-    test_data = dataset_test[feature_cols].values
-    dataset_total = np.vstack((train_data, test_data))
-    y_test = dataset_test['build_failed'].values
+    X_train, _ = prepare_features(dataset_train)
+    X_test, y_test = prepare_features(dataset_test)
+
+    # X_train_scaled, scaler = scale_features(X_train)
+    # X_test_scaled, _ = scale_features(X_test, scaler=scaler)
+
+    dataset_total = np.vstack((X_train.values, X_test.values))
 
     if len(dataset_total) < time_step + len(dataset_test):
         raise ValueError("Not enough data for test sequences")

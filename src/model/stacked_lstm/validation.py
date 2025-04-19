@@ -65,16 +65,6 @@ def run_online_validation(tuner="ga", dataset_dir="../data/processed"):
     if not datasets:
         raise ValueError(f"No datasets found in {dataset_dir}")
 
-    # for f in os.listdir(dataset_dir):
-    #     try:
-    #         datasets[f] = Utils.get_dataset(f, dataset_dir)
-    #         print(f"Loaded {f} with {len(datasets[f])} samples")
-    #     except Exception as e:
-    #         print(f"Error loading {f}: {e}")
-    # print(f"Loaded datasets: {list(datasets.keys())}")
-    # if not datasets:
-    #     raise ValueError(f"No datasets found in {dataset_dir}")
-
     for file_name, dataset in datasets.items():
         best_f1 = -1
         best_model_path = None
@@ -98,7 +88,7 @@ def run_online_validation(tuner="ga", dataset_dir="../data/processed"):
                     save_path = os.path.join(MODEL_DIR,
                                              f"training_history_{file_name}_fold_{fold_idx + 1}_iter_{iteration}.png")
                     print(f"Plotting training history for {file_name} Fold {fold_idx + 1} Iter {iteration}...")
-                    plot_training_history(history, file_name, fold_idx, save_path=save_path)
+                    plot_training_history(history, file_name, fold_idx, save_path=None)
                 else:
                     print("No training history available to plot.")
 
@@ -130,7 +120,7 @@ def run_online_validation(tuner="ga", dataset_dir="../data/processed"):
                 y_pred_probs = best_model.predict(X_test).flatten()
                 print(f"Plotting ROC curve for {file_name} Fold {fold_idx + 1}...")
                 save_path = os.path.join(MODEL_DIR, f"roc_curve_{file_name}_fold_{fold_idx + 1}.png")
-                plot_roc_curve(y_test, y_pred_probs, file_name, fold_idx, save_path=save_path)
+                plot_roc_curve(y_test, y_pred_probs, file_name, fold_idx, save_path=None)
 
                 entry_test.update({
                     "iter": iteration, "proj": file_name, "exp": fold_idx + 1, "algo": MODEL_NAME
@@ -156,6 +146,11 @@ def run_online_validation(tuner="ga", dataset_dir="../data/processed"):
     print(proj_scores)
     bellwether = proj_scores['F1'].idxmax()
     print(f"\nSelected Bellwether: {bellwether} (Best F1: {proj_scores.loc[bellwether, 'F1']:.4f})")
+
+    train_df = pd.DataFrame(all_train_entries)
+    test_df = pd.DataFrame(all_test_entries)
+    print("Train columns:", train_df.columns.tolist())
+    print("Test columns:", test_df.columns.tolist())
 
     # Plot the results
     plot_metrics(all_train_entries, all_test_entries, "Online Validation")

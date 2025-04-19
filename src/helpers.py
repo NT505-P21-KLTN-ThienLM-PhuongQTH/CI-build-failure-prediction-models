@@ -85,7 +85,7 @@ class Utils:
         return isinstance(n, int)
 
     @staticmethod
-    def online_validation_folds(dataset, n_folds=10, window_size=1000, step_size=500):
+    def online_validation_folds(dataset, n_folds=10, window_size=1000, step_size=600):
         """
         Chia dữ liệu time series thành các fold với cửa sổ trượt.
 
@@ -98,7 +98,7 @@ class Utils:
         Returns:
             train_sets, test_sets: List các tập huấn luyện và tập validation.
         """
-        dataset = dataset.sort_values(by='gh_build_started_at')  # Đảm bảo dữ liệu được sắp xếp theo thời gian
+        # dataset = dataset.sort_values(by='gh_build_started_at')  # Đã sort khi preprocess data
         total_length = len(dataset)
         train_sets = []
         test_sets = []

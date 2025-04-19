@@ -23,8 +23,8 @@ TARGET_COLUMNS = [
     "gh_diff_tests_deleted", "gh_diff_src_files", "gh_diff_doc_files",
     "gh_diff_other_files", "gh_num_commits_on_files_touched", "gh_sloc",
     "gh_test_lines_per_kloc", "gh_test_cases_per_kloc", "gh_asserts_cases_per_kloc",
-    "gh_by_core_team_member", "gh_build_started_at", "tr_log_num_tests_failed",
-    "tr_duration", "tr_build_id", "tr_job_id"
+    "gh_by_core_team_member", "gh_build_started_at",
+    "tr_log_num_tests_failed", "tr_duration", "tr_build_id", "tr_job_id"
 ]
 
 # Ánh xạ tên cột cho từng nhóm
@@ -204,9 +204,6 @@ def add_build_features(df):
     comm_experience = df.groupby('gh_by_core_team_member').cumcount() + 1
     df['comm_avg_experience'] = comm_experience
 
-    # 9. totalNumberOfRevisions: Tổng số commit trên các file được chạm tới
-    df['totalNumberOfRevisions'] = df['gh_num_commits_on_files_touched']
-
     # 10. no_config_edited: Có chỉnh sửa config file không (giả định dựa trên gh_diff_doc_files)
     df['no_config_edited'] = (df['gh_diff_doc_files'] > 0).astype(int)
 
@@ -294,34 +291,61 @@ def fill_nan_values(df):
         lambda x: x.fillna(x.mean() if not pd.isna(x.mean()) else 0))
     return df
 
-def encode_categorical_columns(df, columns):
-    """Mã hóa cột phân loại."""
-    df_encoded = df.copy()
-    encoders = {}
-    for col in columns:
-        le = LabelEncoder()
-        df_encoded[col] = le.fit_transform(df_encoded[col].astype(str))
-        encoders[col] = le
-    return df_encoded, encoders
+def encode_categorical_columns(df, columns, project_col='gh_project_name'):
+    """Mã hóa cột phân loại theo từng project."""
+    df_encoded_list = []
+    encoders_by_project = {}
 
-def normalize_numerical_columns(df, columns):
-    """Chuẩn hóa cột số."""
-    df_normalized = df.copy()
-    scaler = MinMaxScaler()
-    valid_columns = [col for col in columns if col in df.columns]
-    df_normalized[valid_columns] = scaler.fit_transform(df_normalized[valid_columns])
-    return df_normalized, scaler
+    for project, group in df.groupby(project_col):
+        group_encoded = group.copy()
+        encoders = {}
+        for col in columns:
+            le = LabelEncoder()
+            group_encoded[col] = le.fit_transform(group_encoded[col].astype(str))
+            encoders[col] = le
+        encoders_by_project[project] = encoders
+        df_encoded_list.append(group_encoded)
 
-def encode_cyclical_time_features(df, columns, periods):
-    """Mã hóa các cột thời gian tuần hoàn."""
-    df_encoded = df.copy()
-    for col in columns:
-        if col in df_encoded.columns and col in periods:
-            period = periods[col]
-            df_encoded[f'{col}_sin'] = np.sin(2 * np.pi * df_encoded[col] / period)
-            df_encoded[f'{col}_cos'] = np.cos(2 * np.pi * df_encoded[col] / period)
+    df_encoded = pd.concat(df_encoded_list, ignore_index=True)
+    return df_encoded, encoders_by_project
+
+
+def normalize_numerical_columns(df, columns, project_col='gh_project_name'):
+    """Chuẩn hóa cột số theo từng project."""
+    df_normalized_list = []
+    scalers_by_project = {}
+
+    for project, group in df.groupby(project_col):
+        group_normalized = group.copy()
+        scalers = {}
+        for col in columns:
+            if col in group.columns:
+                scaler = MinMaxScaler()
+                group_normalized[col] = scaler.fit_transform(group[[col]])
+                scalers[col] = scaler
+        scalers_by_project[project] = scalers
+        df_normalized_list.append(group_normalized)
+
+    df_normalized = pd.concat(df_normalized_list, ignore_index=True)
+    return df_normalized, scalers_by_project
+
+
+def encode_cyclical_time_features(df, columns, periods, project_col='gh_project_name'):
+    """Mã hóa các cột thời gian tuần hoàn theo từng project."""
+    df_encoded_list = []
+
+    for project, group in df.groupby(project_col):
+        group_encoded = group.copy()
+        for col in columns:
+            if col in group_encoded.columns and col in periods:
+                period = periods[col]
+                group_encoded[f'{col}_sin'] = np.sin(2 * np.pi * group_encoded[col] / period)
+                group_encoded[f'{col}_cos'] = np.cos(2 * np.pi * group_encoded[col] / period)
+                group_encoded = group_encoded.drop(columns=[col])
+        df_encoded_list.append(group_encoded)
+
+    df_encoded = pd.concat(df_encoded_list, ignore_index=True)
     return df_encoded
-
 
 def drop_low_importance_features(X, importance_df, threshold=0.001):
     """

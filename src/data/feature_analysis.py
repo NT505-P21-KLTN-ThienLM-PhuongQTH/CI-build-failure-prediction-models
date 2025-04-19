@@ -5,6 +5,36 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.svm import LinearSVC
 from sklearn.preprocessing import StandardScaler
 
+def scale_features(X, one_hot_prefixes=None, scaler=None):
+    """
+    Chuẩn hóa dữ liệu: scale các cột numeric, giữ nguyên one-hot.
+    Trả về DataFrame đã chuẩn hóa và các nhóm cột.
+    """
+    if one_hot_prefixes is None:
+        one_hot_prefixes = []
+
+    one_hot_cols = [
+        col for col in X.columns if any(col.startswith(prefix) for prefix in one_hot_prefixes)
+    ]
+    binary_cols = [
+        col for col in X.columns
+        if X[col].nunique() == 2 and set(X[col].unique()).issubset({0, 1}) and col not in one_hot_cols
+    ]
+    numeric_cols = [col for col in X.columns if col not in one_hot_cols + binary_cols]
+
+    if scaler is None:
+        scaler = StandardScaler()
+        X_numeric_scaled = scaler.fit_transform(X[numeric_cols])
+    else:
+        X_numeric_scaled = scaler.transform(X[numeric_cols])
+
+    X_scaled = pd.concat([
+        pd.DataFrame(X_numeric_scaled, columns=numeric_cols, index=X.index),
+        X[one_hot_cols + binary_cols]
+    ], axis=1)
+
+    return X_scaled, scaler
+
 def get_rf_importance(X, y):
     """Đánh giá feature importance bằng Random Forest."""
     rf = RandomForestClassifier(n_estimators=100, random_state=42)
@@ -17,20 +47,20 @@ def get_rf_importance(X, y):
 
 def get_log_importance(X, y):
     """Đánh giá feature importance bằng Logistic Regression."""
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
+    X_scaled, _ = scale_features(X)
+
     log_reg = LogisticRegression(max_iter=1000, random_state=42)
     log_reg.fit(X_scaled, y)
     importance = pd.DataFrame({
-        'Feature': X.columns,
+        'Feature': X_scaled.columns,
         'Importance': np.abs(log_reg.coef_[0])
     }).sort_values(by='Importance', ascending=False)
     return importance
 
 def get_svc_selection(X, y):
     """Đánh giá feature importance bằng LinearSVC."""
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
+    X_scaled, _ = scale_features(X)
+
     svc = LinearSVC(max_iter=1000, random_state=42)
     svc.fit(X_scaled, y)
     # Kiểm tra số lớp và xử lý coef_
@@ -38,9 +68,9 @@ def get_svc_selection(X, y):
         print("Cảnh báo: LinearSVC phát hiện bài toán đa lớp, lấy trung bình coef_")
         coef = np.abs(svc.coef_).mean(axis=0)  # Trung bình các hệ số theo lớp
     else:
-        coef = np.abs(svc.coef_.ravel())  # Nhị phân, lấy mảng 1D
+        coef = np.abs(svc.coef_.ravel())
     importance = pd.DataFrame({
-        'Feature': X.columns,
+        'Feature': X_scaled.columns,
         'Importance': coef
     }).sort_values(by='Importance', ascending=False)
     return importance
@@ -75,15 +105,9 @@ def aggregate_feature_importance(X, y):
     Returns:
     - pd.DataFrame: DataFrame chứa feature và điểm importance trung bình (đã chuẩn hóa).
     """
-    # Tính importance từ từng mô hình
-    rf_importance = get_rf_importance(X, y)
-    log_importance = get_log_importance(X, y)
-    svc_importance = get_svc_selection(X, y)
-
-    # Chuẩn hóa importance về thang 0-1
-    rf_importance = normalize_importance(rf_importance)
-    log_importance = normalize_importance(log_importance)
-    svc_importance = normalize_importance(svc_importance)
+    rf_importance = normalize_importance(get_rf_importance(X, y))
+    log_importance = normalize_importance(get_log_importance(X, y))
+    svc_importance = normalize_importance(get_svc_selection(X, y))
 
     # Gộp dữ liệu
     combined_importance = pd.DataFrame({
@@ -102,7 +126,8 @@ def aggregate_feature_importance(X, y):
 def prepare_features(df, target_column='build_failed'):
     """Chuẩn bị dữ liệu cho phân tích feature importance."""
     # Loại bỏ các cột không phải số hoặc không liên quan
-    X = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).drop(columns=[target_column], errors='ignore')
+    columns_to_drop = [target_column, "gh_build_started_at", "gh_project_name", "tr_build_id"]
+    X = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).drop(columns=columns_to_drop, errors='ignore')
     y = df[target_column]
     return X, y
 
