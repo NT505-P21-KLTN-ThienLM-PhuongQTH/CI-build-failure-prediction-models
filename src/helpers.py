@@ -106,8 +106,9 @@ class Utils:
         for fold in range(n_folds):
             start_idx = fold * step_size
             train_end_idx = start_idx + window_size
-            test_end_idx = train_end_idx + (total_length // n_folds)
-
+            # test_end_idx = train_end_idx + (total_length // n_folds)
+            test_size = int(window_size * 0.2)
+            test_end_idx = train_end_idx + test_size
             if test_end_idx > total_length:
                 break
 

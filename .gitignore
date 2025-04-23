@@ -5,6 +5,27 @@ data/raw
 data/*/*.json
 data/*/*.npy
 dataset/
-__pycache__/
 ci-build/
 .idea
+
+# Python
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+
+# MLflow and models
+mlruns/
+models/
+
+# Data
+data/processed/*
+!data/processed/.gitkeep
+
+# Notebooks and temp files
+*.ipynb_checkpoints
+*.log

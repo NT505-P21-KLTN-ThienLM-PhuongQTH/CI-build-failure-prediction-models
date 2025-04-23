@@ -1,6 +1,9 @@
 import os
 import pandas as pd
+import mlflow
+import mlflow.keras
 import matplotlib.pyplot as plt
+from mlflow.models import infer_signature
 from .model import construct_lstm_model
 from .preprocess import test_preprocess, train_preprocess, apply_smote
 from .tuners import evaluate_tuner, CONFIG
@@ -8,7 +11,15 @@ from src.helpers import Utils
 from ...data.visualization import plot_class_distribution, plot_roc_curve, plot_training_history
 import numpy as np
 
-MODEL_DIR = "../models/stacked_lstm"
+# Define project root and centralize directories
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+MLRUNS_DIR = os.path.join(PROJECT_ROOT, "mlruns")
+MODEL_DIR = os.path.join(PROJECT_ROOT, "models", "stacked_lstm")
+
+# Set MLflow tracking URI to the project root
+mlflow.set_tracking_uri(f"file://{MLRUNS_DIR}")
+os.makedirs(MODEL_DIR, exist_ok=True)
+
 COLUMNS_RES = ["proj", "algo", "iter", "AUC", "accuracy", "F1", "exp"]
 MODEL_NAME = "lstm"
 
@@ -18,9 +29,9 @@ def plot_metrics(train_entries, test_entries, title):
     test_df = pd.DataFrame(test_entries)[COLUMNS_RES]
 
     print(f"\n{title} - Train Results:")
-    print(train_df.groupby(['proj', 'exp']).mean())
+    print(train_df.groupby(['proj', 'exp']).mean(numeric_only=True))
     print(f"\n{title} - Test Results:")
-    print(test_df.groupby(['proj', 'exp']).mean())
+    print(test_df.groupby(['proj', 'exp']).mean(numeric_only=True))
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
     for i, metric in enumerate(['AUC', 'accuracy', 'F1']):
@@ -32,15 +43,14 @@ def plot_metrics(train_entries, test_entries, title):
     plt.tight_layout()
     plt.show()
 
-def run_online_validation(tuner="ga", dataset_dir="../data/processed"):
-    # Run online validation and plot results.
+def run_online_validation(tuner="ga", dataset_dir="../data/processed", experiment_name="Online_Validation"):
     all_train_entries = []
     all_test_entries = []
 
+    mlflow.set_experiment(experiment_name)
+
     print(f"Loading datasets from {dataset_dir}...")
     dataset_sizes = {}
-
-    # Get number of rows for each dataset
     for f in os.listdir(dataset_dir):
         try:
             df = Utils.get_dataset(f, dataset_dir)
@@ -52,7 +62,6 @@ def run_online_validation(tuner="ga", dataset_dir="../data/processed"):
     top_10_files = sorted(dataset_sizes.items(), key=lambda x: x[1], reverse=True)[:10]
     top_10_files = [f for f, _ in top_10_files]
 
-    # Load only the top 10 datasets
     datasets = {}
     for f in top_10_files:
         try:
@@ -65,6 +74,7 @@ def run_online_validation(tuner="ga", dataset_dir="../data/processed"):
     if not datasets:
         raise ValueError(f"No datasets found in {dataset_dir}")
 
+    pretrained_model_path = None
     for file_name, dataset in datasets.items():
         best_f1 = -1
         best_model_path = None
@@ -73,70 +83,96 @@ def run_online_validation(tuner="ga", dataset_dir="../data/processed"):
         # Vẽ phân bố lớp trước khi cân bằng
         print(f"Plotting class distribution BEFORE balancing for {file_name}...")
         plot_class_distribution(train_sets, test_sets, proj_name=file_name)
-        # Lưu các train_sets đã cân bằng
-        balanced_train_sets = []
 
+        balanced_train_sets = []
         for fold_idx, (train_set, test_set) in enumerate(zip(train_sets, test_sets)):
             for iteration in range(1, CONFIG['NBR_REP'] + 1):
-                print(f"\n[Proj {file_name} | Fold {fold_idx + 1} | Iter {iteration}] Training...")
-                entry_train = evaluate_tuner(tuner, train_set)
+                with mlflow.start_run(nested=True) as run:
+                    mlflow.log_param("project", file_name)
+                    mlflow.log_param("fold", fold_idx + 1)
+                    mlflow.log_param("iteration", iteration)
 
-                history = entry_train.get("history")
-                print(f"History object: {history}")
-                if history:
-                    # Đường dẫn để lưu đồ thị loss và accuracy
-                    save_path = os.path.join(MODEL_DIR,
-                                             f"training_history_{file_name}_fold_{fold_idx + 1}_iter_{iteration}.png")
-                    print(f"Plotting training history for {file_name} Fold {fold_idx + 1} Iter {iteration}...")
-                    plot_training_history(history, file_name, fold_idx, save_path=None)
-                else:
-                    print("No training history available to plot.")
+                    print(f"\n[Proj {file_name} | Fold {fold_idx + 1} | Iter {iteration}] Training...")
+                    entry_train = evaluate_tuner(tuner, train_set, experiment_name, pretrained_model_path=pretrained_model_path, fine_tune=True)
 
-                # Lấy dữ liệu đã cân bằng trước khi tạo chuỗi thời gian
-                feature_cols = [col for col in train_set.columns
-                                if col not in ['build_failed', 'gh_build_started_at', 'gh_project_name']
-                                and train_set[col].dtype in [np.float64, np.float32, np.int64, np.int32]]
-                training_set = train_set[feature_cols].values
-                y = train_set['build_failed'].values
-                X_smote, y_smote = apply_smote(training_set, y)
+                    history = entry_train.get("history")
+                    print(f"History object: {history}")
+                    if history:
+                        # Đường dẫn để lưu đồ thị loss và accuracy
+                        save_path = os.path.join(MODEL_DIR,
+                                                 f"training_history_{file_name}_fold_{fold_idx + 1}_iter_{iteration}.png")
+                        print(f"Plotting training history for {file_name} Fold {fold_idx + 1} Iter {iteration}...")
+                        plot_training_history(history, file_name, fold_idx, save_path=save_path)
+                    else:
+                        print("No training history available to plot.")
 
-                # Tạo DataFrame từ dữ liệu cân bằng
-                balanced_df = pd.DataFrame(X_smote, columns=feature_cols)
-                balanced_df['build_failed'] = y_smote
+                    metrics = entry_train["entry"]  # Lấy dictionary chứa AUC, accuracy, F1
+                    train_entry_flat = {
+                        "iter": iteration,
+                        "proj": f"proj{file_name}",
+                        "exp": fold_idx + 1,
+                        "algo": MODEL_NAME,
+                        "AUC": metrics.get("AUC", 0.0),
+                        "accuracy": metrics.get("accuracy", 0.0),
+                        "F1": metrics.get("F1", 0.0)
+                    }
+                    all_train_entries.append(train_entry_flat)
 
-                if iteration == 1:  # Chỉ lưu ở lần lặp đầu tiên để tránh trùng lặp
-                    balanced_train_sets.append(balanced_df)
+                    # Lấy dữ liệu đã cân bằng trước khi tạo chuỗi thời gian
+                    feature_cols = [col for col in train_set.columns
+                                    if col not in ['build_failed', 'gh_build_started_at', 'gh_project_name']
+                                    and train_set[col].dtype in [np.float64, np.float32, np.int64, np.int32]]
+                    training_set = train_set[feature_cols].values
+                    y = train_set['build_failed'].values
+                    X_smote, y_smote = apply_smote(training_set, y)
 
-                entry_train.update({
-                    "iter": iteration, "proj": f"proj{file_name}", "exp": fold_idx + 1, "algo": MODEL_NAME
-                })
-                all_train_entries.append(entry_train)
+                    # Tạo DataFrame từ dữ liệu cân bằng
+                    balanced_df = pd.DataFrame(X_smote, columns=feature_cols)
+                    balanced_df['build_failed'] = y_smote
 
-                best_model = entry_train["model"]
-                best_params = entry_train["params"]
-                X_test, y_test = test_preprocess(train_set, test_set, best_params["time_step"])
-                entry_test = Utils.predict_lstm(best_model, X_test, y_test)
+                    if iteration == 1:  # Chỉ lưu ở lần lặp đầu tiên để tránh trùng lặp
+                        balanced_train_sets.append(balanced_df)
 
-                y_pred_probs = best_model.predict(X_test).flatten()
-                print(f"Plotting ROC curve for {file_name} Fold {fold_idx + 1}...")
-                save_path = os.path.join(MODEL_DIR, f"roc_curve_{file_name}_fold_{fold_idx + 1}.png")
-                plot_roc_curve(y_test, y_pred_probs, file_name, fold_idx, save_path=None)
+                    entry_train.update({
+                        "iter": iteration, "proj": f"proj{file_name}", "exp": fold_idx + 1, "algo": MODEL_NAME
+                    })
+                    all_train_entries.append(entry_train)
 
-                entry_test.update({
-                    "iter": iteration, "proj": file_name, "exp": fold_idx + 1, "algo": MODEL_NAME
-                })
-                if entry_test["F1"] > best_f1:
-                    best_f1 = entry_test["F1"]
-                    best_model_path = os.path.join(MODEL_DIR, f"best_stacked_lstm_{file_name}.keras")
-                    best_model.save(best_model_path)
-                print(f"Test metrics: {entry_test}")
-                all_test_entries.append(entry_test)
+                    best_model = entry_train["model"]
+                    best_params = entry_train["params"]
+                    X_test, y_test = test_preprocess(train_set, test_set, best_params["time_step"])
+                    entry_test = Utils.predict_lstm(best_model, X_test, y_test)
 
-                # Vẽ phân bố lớp sau khi cân bằng
-                print(f"Plotting class distribution AFTER balancing for {file_name}...")
-                num_folds = min(len(balanced_train_sets), len(test_sets))
-                plot_class_distribution(balanced_train_sets[:num_folds], test_sets[:num_folds],
-                                        proj_name=file_name + " (Balanced)")
+                    mlflow.log_metric("test_F1", entry_test["F1"])
+                    mlflow.log_metric("test_AUC", entry_test["AUC"])
+                    mlflow.log_metric("test_accuracy", entry_test["accuracy"])
+
+                    y_pred_probs = best_model.predict(X_test).flatten()
+                    print(f"Plotting ROC curve for {file_name} Fold {fold_idx + 1}...")
+                    save_path = os.path.join(MODEL_DIR, f"roc_curve_{file_name}_fold_{fold_idx + 1}.png")
+                    plot_roc_curve(y_test, y_pred_probs, file_name, fold_idx, save_path=save_path)
+                    mlflow.log_artifact(save_path)
+
+                    entry_test.update({
+                        "iter": iteration, "proj": file_name, "exp": fold_idx + 1, "algo": MODEL_NAME
+                    })
+                    if entry_test["F1"] > best_f1:
+                        best_f1 = entry_test["F1"]
+
+                        model_name = f"best_stacked_lstm_{file_name}"
+                        mlflow.keras.log_model(best_model, artifact_path=model_name)
+
+                        best_model_uri = f"runs:/{run.info.run_id}/{model_name}"
+                        pretrained_model_path = best_model_uri
+
+                    print(f"Test metrics: {entry_test}")
+                    all_test_entries.append(entry_test)
+
+                    # Vẽ phân bố lớp sau khi cân bằng
+                    print(f"Plotting class distribution AFTER balancing for {file_name}...")
+                    num_folds = min(len(balanced_train_sets), len(test_sets))
+                    plot_class_distribution(balanced_train_sets[:num_folds], test_sets[:num_folds],
+                                            proj_name=file_name + " (Balanced)")
 
         print(f"Best model for {file_name} saved at: {best_model_path}, F1: {best_f1}")
 
@@ -156,39 +192,80 @@ def run_online_validation(tuner="ga", dataset_dir="../data/processed"):
     plot_metrics(all_train_entries, all_test_entries, "Online Validation")
     return datasets[bellwether], datasets
 
-def run_cross_project_validation(bellwether_dataset, all_datasets, tuner="ga"):
+def run_cross_project_validation(bellwether_dataset, all_datasets, tuner="ga", experiment_name="Cross_Project_Validation"):
     # Run cross-project validation and plot results.
     all_train_entries = []
     all_test_entries = []
 
+    mlflow.set_experiment(experiment_name)
+
     for iteration in range(1, CONFIG['NBR_REP'] + 1):
-        print(f"[Cross-Project | Iter {iteration}] Training on Bellwether...")
-        entry_train = evaluate_tuner(tuner, bellwether_dataset)
-        best_model = entry_train["model"]
-        best_params = entry_train["params"]
-        entry_train.update({
-            "iter": iteration, "proj": "bellwether", "algo": MODEL_NAME, "exp": 1
-        })
-        all_train_entries.append(entry_train)
+        with mlflow.start_run(nested=True):
+            mlflow.log_param("iteration", iteration)
 
-        for file_name, test_set in all_datasets.items():
-            if test_set is not bellwether_dataset:
-                best_f1 = -1
-                best_model_path = None
-                print(f"Testing on {file_name}...")
-                X_test, y_test = test_preprocess(bellwether_dataset, test_set, best_params["time_step"])
-                entry_test = Utils.predict_lstm(best_model, X_test, y_test)
-                entry_test.update({
-                    "iter": iteration, "proj": file_name, "exp": 1, "algo": MODEL_NAME
-                })
+            print(f"[Cross-Project | Iter {iteration}] Training on Bellwether...")
+            entry_train = evaluate_tuner(tuner, bellwether_dataset, experiment_name)
+            best_model = entry_train["model"]
+            best_params = entry_train["params"]
 
-                if entry_test["F1"] > best_f1:
-                    best_f1 = entry_test["F1"]
-                    best_model_path = os.path.join(MODEL_DIR,
-                                                   f"best_stacked_lstm_{file_name}_cross_iter{iteration}.keras")
-                    best_model.save(best_model_path)
-                    print(f"Best model for {file_name} saved at: {best_model_path}, F1: {best_f1}")
-                print(f"Test metrics: {entry_test}")
-                all_test_entries.append(entry_test)
+            # Save Bellwether model
+            model_name = f"bellwether_lstm_iter{iteration}"
+            mlflow.keras.log_model(best_model, artifact_path=model_name)
+
+            # Lấy URI của mô hình vừa lưu
+            bellwether_model_path = f"runs:/{mlflow.active_run().info.run_id}/{model_name}"
+
+            metrics = entry_train["entry"]
+            train_entry_flat = {
+                "iter": iteration,
+                "proj": "bellwether",
+                "algo": MODEL_NAME,
+                "exp": 1,
+                "AUC": metrics.get("AUC", 0.0),
+                "accuracy": metrics.get("accuracy", 0.0),
+                "F1": metrics.get("F1", 0.0)
+            }
+            all_train_entries.append(train_entry_flat)
+
+            for file_name, test_set in all_datasets.items():
+                if test_set is not bellwether_dataset:
+                    best_f1 = -1
+                    best_model_path = None
+                    print(f"Testing on {file_name} with Transfer Learning...")
+
+                    X_test, _ = test_preprocess(bellwether_dataset, test_set, best_params["time_step"])
+
+                    # Fine-tune the model
+                    fine_tune_params = best_params.copy()
+                    fine_tune_params["nb_epochs"] = 5
+                    entry_fine_tune = construct_lstm_model(
+                        fine_tune_params, test_set, pretrained_model_path=bellwether_model_path, fine_tune=True
+                    )
+                    fine_tuned_model = entry_fine_tune["model"]
+
+                    X_test, y_test = test_preprocess(bellwether_dataset, test_set, best_params["time_step"])
+                    entry_test = Utils.predict_lstm(fine_tuned_model, X_test, y_test)
+                    entry_test.update({
+                        "iter": iteration, "proj": file_name, "exp": 1, "algo": MODEL_NAME
+                    })
+
+                    mlflow.log_metric(f"test_F1_{file_name}", entry_test["F1"])
+                    mlflow.log_metric(f"test_AUC_{file_name}", entry_test["AUC"])
+                    mlflow.log_metric(f"test_accuracy_{file_name}", entry_test["accuracy"])
+
+                    model_path = os.path.join(MODEL_DIR, f"fine_tuned_lstm_{file_name}.keras")
+                    fine_tuned_model.save(model_path)
+                    mlflow.log_artifact(model_path, artifact_path=f"fine_tuned_lstm_{file_name}")
+
+                    if entry_test["F1"] > best_f1:
+                        best_f1 = entry_test["F1"]
+                        best_model_path = os.path.join(MODEL_DIR,
+                                                       f"best_stacked_lstm_{file_name}_cross_iter{iteration}.keras")
+                        best_model.save(best_model_path)
+                        print(f"Best model for {file_name} saved at: {best_model_path}, F1: {best_f1}")
+                        fine_tuned_model.save(best_model_path)
+                        mlflow.log_artifact(best_model_path)
+                    print(f"Test metrics: {entry_test}")
+                    all_test_entries.append(entry_test)
 
     plot_metrics(all_train_entries, all_test_entries, "Cross-Project Validation")
