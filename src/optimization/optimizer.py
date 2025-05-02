@@ -1,6 +1,6 @@
 import random
 # from solution import Solution
-from optimization.solution import Solution
+from src.optimization.solution import Solution
 
 class Optimizer:
     def __init__(self, GA_params, all_possible_params):

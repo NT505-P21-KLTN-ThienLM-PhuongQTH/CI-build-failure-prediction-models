@@ -29,3 +29,10 @@ data/processed/*
 # Notebooks and temp files
 *.ipynb_checkpoints
 *.log
+
+# DVC
+data/processed/*
+!data/processed/*.dvc
+!data/processed/.gitkeep
+.dvc
+.dvcignore

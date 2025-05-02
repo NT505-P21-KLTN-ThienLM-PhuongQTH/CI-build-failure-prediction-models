@@ -7,7 +7,7 @@ import ConfigSpace as CS
 from hpbandster.core.worker import Worker
 from hpbandster.optimizers import BOHB
 from src.optimization.GA_runner import GARunner
-from .model import construct_lstm_model
+from src.model.stacked_lstm.model import construct_lstm_model
 from timeit import default_timer as timer
 import os
 
@@ -64,110 +64,109 @@ def evaluate_tuner(tuner_option, train_set, experiment_name="Online_Validation",
     global data
     data = train_set
 
-    with mlflow.start_run(nested=True):
-        mlflow.log_param("tuner", tuner_option)
+    # mlflow.log_param("tuner", tuner_option)
+    # Define explicit parameter space for GA
+    all_possible_params = {
+        'drop_proba': list(np.linspace(0.01, 0.21, 20)),
+        'nb_units': [32, 64],
+        'nb_epochs': [4, 5, 6],
+        'nb_batch': [4, 8, 16, 32, 64],  # Power of 2
+        'nb_layers': [1, 2, 3, 4],
+        'optimizer': ['adam', 'rmsprop'],
+        'time_step': list(range(30, 61))
+    }
 
-        # Define explicit parameter space for GA
-        all_possible_params = {
-            'drop_proba': list(np.linspace(0.01, 0.21, 20)),
-            'nb_units': [32, 64],
-            'nb_epochs': [4, 5, 6],
-            'nb_batch': [4, 8, 16, 32, 64],  # Power of 2
-            'nb_layers': [1, 2, 3, 4],
-            'optimizer': ['adam', 'rmsprop'],
-            'time_step': list(range(30, 61))
+    start = timer()
+    history = None
+
+    if tuner_option == "ga":
+        ga_runner = GARunner()
+        best_params, best_model, entry_train, history = ga_runner.generate(
+            all_possible_params, construct_lstm_model, data,
+            pretrained_model_path=pretrained_model_path, fine_tune=fine_tune
+        )
+
+    elif tuner_option == "tpe":
+        param_space = {k: hp.choice(k, v) for k, v in all_possible_params.items()}
+        trials = Trials()
+        best = fmin(train_lstm_with_hyperopt, param_space, algo=tpe.suggest, max_evals=CONFIG.get('MAX_EVAL'),
+                    trials=trials)
+        best_params = {k: all_possible_params[k][v] for k, v in best.items()}
+        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path, fine_tune=fine_tune)
+        entry_train, best_model = res["entry"], res["model"]
+
+    elif tuner_option == "pso":
+        params_PSO = {
+            'nb_units': [all_possible_params['nb_units'][0], all_possible_params['nb_units'][-1]],
+            'nb_layers': [all_possible_params['nb_layers'][0], all_possible_params['nb_layers'][-1]],
+            'optimizer': [1, 2],  # 1: adam, 2: rmsprop
+            'time_step': [all_possible_params['time_step'][0], all_possible_params['time_step'][-1]],
+            'nb_epochs': [all_possible_params['nb_epochs'][0], all_possible_params['nb_epochs'][-1]],
+            'nb_batch': [all_possible_params['nb_batch'][0], all_possible_params['nb_batch'][-1]],
+            'drop_proba': [all_possible_params['drop_proba'][0], all_possible_params['drop_proba'][-1]]
         }
+        best_params, _, _ = optunity.maximize_structured(fn_lstm_pso, params_PSO, num_evals=CONFIG.get('MAX_EVAL'))
+        best_params = convert_from_PSO(best_params)
+        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path, fine_tune=fine_tune)
+        entry_train, best_model = res["entry"], res["model"]
 
-        start = timer()
-        history = None
+    elif tuner_option == "bohb":
+        config_space = CS.ConfigurationSpace()
+        config_space.add(CS.UniformIntegerHyperparameter('nb_units', lower=32, upper=64))
+        config_space.add(CS.UniformIntegerHyperparameter('nb_layers', lower=1, upper=4))
+        config_space.add(CS.CategoricalHyperparameter('optimizer', choices=['adam', 'rmsprop']))
+        config_space.add(CS.UniformIntegerHyperparameter('time_step', lower=30, upper=60))
+        config_space.add(CS.UniformIntegerHyperparameter('nb_epochs', lower=4, upper=6))
+        config_space.add(CS.UniformIntegerHyperparameter('nb_batch', lower=4, upper=64))
+        config_space.add(CS.UniformFloatHyperparameter('drop_proba', lower=0.01, upper=0.2))
 
-        if tuner_option == "ga":
-            ga_runner = GARunner()
-            best_params, best_model, entry_train, history = ga_runner.generate(
-                all_possible_params, construct_lstm_model, data,
-                pretrained_model_path=pretrained_model_path, fine_tune=fine_tune
-            )
+        import hpbandster.core.nameserver as hpns
+        NS = hpns.NameServer(run_id="LSTM", host='127.0.0.1', port=None)
+        NS.start()
+        w = LSTMWorker(train_set=data, nameserver='127.0.0.1', run_id="LSTM")
+        w.run(background=True)
+        bohb = BOHB(configspace=config_space, run_id="LSTM", nameserver='127.0.0.1', min_budget=1,
+                    max_budget=CONFIG.get('NBR_SOL'))
+        res = bohb.run(n_iterations=CONFIG.get('NBR_GEN'))
+        best = res.get_incumbent_id()
+        best_params = res.get_id2config_mapping()[best]['config']
+        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path, fine_tune=fine_tune)
+        entry_train, best_model = res["entry"], res["model"]
+        bohb.shutdown(shutdown_workers=True)
+        NS.shutdown()
 
-        elif tuner_option == "tpe":
-            param_space = {k: hp.choice(k, v) for k, v in all_possible_params.items()}
-            trials = Trials()
-            best = fmin(train_lstm_with_hyperopt, param_space, algo=tpe.suggest, max_evals=CONFIG.get('MAX_EVAL'),
-                        trials=trials)
-            best_params = {k: all_possible_params[k][v] for k, v in best.items()}
-            res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path, fine_tune=fine_tune)
-            entry_train, best_model = res["entry"], res["model"]
+    elif tuner_option == "rs":
+        param_space = {k: hp.choice(k, v) for k, v in all_possible_params.items()}
+        trials = Trials()
+        best = fmin(train_lstm_with_hyperopt, param_space, algo=rand.suggest,
+                    max_evals=CONFIG.get('MAX_EVAL', trials=trials))
+        best_params = {k: all_possible_params[k][v] for k, v in best.items()}
+        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path, fine_tune=fine_tune)
+        entry_train, best_model = res["entry"], res["model"]
 
-        elif tuner_option == "pso":
-            params_PSO = {
-                'nb_units': [all_possible_params['nb_units'][0], all_possible_params['nb_units'][-1]],
-                'nb_layers': [all_possible_params['nb_layers'][0], all_possible_params['nb_layers'][-1]],
-                'optimizer': [1, 2],  # 1: adam, 2: rmsprop
-                'time_step': [all_possible_params['time_step'][0], all_possible_params['time_step'][-1]],
-                'nb_epochs': [all_possible_params['nb_epochs'][0], all_possible_params['nb_epochs'][-1]],
-                'nb_batch': [all_possible_params['nb_batch'][0], all_possible_params['nb_batch'][-1]],
-                'drop_proba': [all_possible_params['drop_proba'][0], all_possible_params['drop_proba'][-1]]
-            }
-            best_params, _, _ = optunity.maximize_structured(fn_lstm_pso, params_PSO, num_evals=CONFIG.get('MAX_EVAL'))
-            best_params = convert_from_PSO(best_params)
-            res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path, fine_tune=fine_tune)
-            entry_train, best_model = res["entry"], res["model"]
+    elif tuner_option == "default":
+        best_params = {
+            'nb_units': 64, 'nb_layers': 3, 'optimizer': 'adam', 'time_step': 30,
+            'nb_epochs': 10, 'nb_batch': 64, 'drop_proba': 0.1
+        }
+        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path, fine_tune=fine_tune)
+        entry_train, best_model = res["entry"], res["model"]
 
-        elif tuner_option == "bohb":
-            config_space = CS.ConfigurationSpace()
-            config_space.add(CS.UniformIntegerHyperparameter('nb_units', lower=32, upper=64))
-            config_space.add(CS.UniformIntegerHyperparameter('nb_layers', lower=1, upper=4))
-            config_space.add(CS.CategoricalHyperparameter('optimizer', choices=['adam', 'rmsprop']))
-            config_space.add(CS.UniformIntegerHyperparameter('time_step', lower=30, upper=60))
-            config_space.add(CS.UniformIntegerHyperparameter('nb_epochs', lower=4, upper=6))
-            config_space.add(CS.UniformIntegerHyperparameter('nb_batch', lower=4, upper=64))
-            config_space.add(CS.UniformFloatHyperparameter('drop_proba', lower=0.01, upper=0.2))
+    end = timer()
+    entry_train.update({"time": end - start, "params": best_params, "model": best_model})
+    # best_model_path = os.path.join(MODEL_DIR, f"best_lstm_{proj_name}_fold{fold_idx}_iter{iter_idx}.keras")
+    # best_model.save(best_model_path)
+    # print(f"Best model saved at: {best_model_path}")
 
-            import hpbandster.core.nameserver as hpns
-            NS = hpns.NameServer(run_id="LSTM", host='127.0.0.1', port=None)
-            NS.start()
-            w = LSTMWorker(train_set=data, nameserver='127.0.0.1', run_id="LSTM")
-            w.run(background=True)
-            bohb = BOHB(configspace=config_space, run_id="LSTM", nameserver='127.0.0.1', min_budget=1,
-                        max_budget=CONFIG.get('NBR_SOL'))
-            res = bohb.run(n_iterations=CONFIG.get('NBR_GEN'))
-            best = res.get_incumbent_id()
-            best_params = res.get_id2config_mapping()[best]['config']
-            res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path, fine_tune=fine_tune)
-            entry_train, best_model = res["entry"], res["model"]
-            bohb.shutdown(shutdown_workers=True)
-            NS.shutdown()
+    # mlflow.log_params(best_params)
+    # mlflow.log_metric("F1", entry_train["F1"])
+    # mlflow.log_metric("AUC", entry_train["AUC"])
+    # mlflow.log_metric("accuracy", entry_train["accuracy"])
+    # mlflow.log_metric("training_time", end - start)
 
-        elif tuner_option == "rs":
-            param_space = {k: hp.choice(k, v) for k, v in all_possible_params.items()}
-            trials = Trials()
-            best = fmin(train_lstm_with_hyperopt, param_space, algo=rand.suggest,
-                        max_evals=CONFIG.get('MAX_EVAL', trials=trials))
-            best_params = {k: all_possible_params[k][v] for k, v in best.items()}
-            res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path, fine_tune=fine_tune)
-            entry_train, best_model = res["entry"], res["model"]
+    # model_path = os.path.join(MODEL_DIR, f"best_lstm_model_{experiment_name}.keras")
+    # best_model.save(model_path)
+    # mlflow.log_artifact(model_path, artifact_path="best_lstm_model")
 
-        elif tuner_option == "default":
-            best_params = {
-                'nb_units': 64, 'nb_layers': 3, 'optimizer': 'adam', 'time_step': 30,
-                'nb_epochs': 10, 'nb_batch': 64, 'drop_proba': 0.1
-            }
-            res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path, fine_tune=fine_tune)
-            entry_train, best_model = res["entry"], res["model"]
-
-        end = timer()
-        entry_train.update({"time": end - start, "params": best_params, "model": best_model})
-        # best_model_path = os.path.join(MODEL_DIR, f"best_lstm_{proj_name}_fold{fold_idx}_iter{iter_idx}.keras")
-        # best_model.save(best_model_path)
-        # print(f"Best model saved at: {best_model_path}")
-        mlflow.log_params(best_params)
-        mlflow.log_metric("F1", entry_train["F1"])
-        mlflow.log_metric("AUC", entry_train["AUC"])
-        mlflow.log_metric("accuracy", entry_train["accuracy"])
-        mlflow.log_metric("training_time", end - start)
-
-        model_path = os.path.join(MODEL_DIR, f"best_lstm_model_{experiment_name}.keras")
-        best_model.save(model_path)
-        mlflow.log_artifact(model_path, artifact_path="best_lstm_model")
-
-        history = history if tuner_option == "ga" else None
-        return {"entry": entry_train, "params": best_params, "model": best_model, "history": history}
+    history = history if tuner_option == "ga" else None
+    return {"entry": entry_train, "params": best_params, "model": best_model, "history": history}

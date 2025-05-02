@@ -29,28 +29,74 @@ class Utils:
         return (pos_probs >= threshold).astype(int)
 
     @staticmethod
-    def get_best_threshold(y_true, y_pred_probs, metric="f1"):
+    def get_best_threshold(y_true, y_pred_probs, priority=None, min_recall=None, min_precision=None):
         """
-        Tìm ngưỡng tối ưu dựa trên F1-score hoặc một metric khác.
+        Tìm ngưỡng tối ưu dựa trên metric được ưu tiên.
 
         Parameters:
         - y_true: Nhãn thực tế (ground truth).
         - y_pred_probs: Xác suất dự đoán cho lớp positive (class 1).
-        - metric: Metric để tối ưu hóa, mặc định là "f1".
+        - priority: Metric để tối ưu hóa ("f1" cho F1-score, "recall" để ưu tiên recall, "precision" để ưu tiên precision).
+        - min_recall: Giá trị tối thiểu của recall (nếu có), chỉ áp dụng khi priority="recall".
+        - min_precision: Giá trị tối thiểu của precision (nếu có), chỉ áp dụng khi priority="precision".
 
         Returns:
         - best_threshold: Ngưỡng tối ưu.
         """
         precision, recall, thresholds = precision_recall_curve(y_true, y_pred_probs)
 
-        # Tính F1-score cho từng ngưỡng
-        f1_scores = 2 * (precision * recall) / (precision + recall + 1e-10)  # Thêm 1e-10 để tránh chia cho 0
+        if priority == "f1":
+            # Tính F1-score cho từng ngưỡng
+            f1_scores = 2 * (precision * recall) / (precision + recall + 1e-10)
+            best_idx = np.argmax(f1_scores)
+            best_threshold = thresholds[best_idx]
+            print(f"Best threshold (max F1): {best_threshold:.4f}, "
+                  f"F1-score: {f1_scores[best_idx]:.4f}, "
+                  f"Precision: {precision[best_idx]:.4f}, "
+                  f"Recall: {recall[best_idx]:.4f}")
 
-        # Tìm ngưỡng có F1-score cao nhất
-        best_idx = np.argmax(f1_scores)
-        best_threshold = thresholds[best_idx]
+        elif priority == "recall":
+            if min_recall is not None:
+                valid_indices = np.where(recall >= min_recall)[0]
+                if len(valid_indices) == 0:
+                    print(f"No threshold satisfies min_recall={min_recall}. Using threshold with highest recall.")
+                    best_idx = np.argmax(recall)
+                else:
+                    # Trong số các ngưỡng thỏa mãn, chọn ngưỡng có precision cao nhất
+                    valid_precisions = precision[valid_indices]
+                    best_idx = valid_indices[np.argmax(valid_precisions)]
+            else:
+                best_idx = np.argmax(recall)
 
-        print(f"Best threshold (max F1): {best_threshold:.4f}, F1-score: {f1_scores[best_idx]:.4f}")
+            best_threshold = thresholds[best_idx]
+            print(f"Best threshold (priority=recall, min_recall={min_recall}): {best_threshold:.4f}, "
+                  f"Recall: {recall[best_idx]:.4f}, "
+                  f"Precision: {precision[best_idx]:.4f}, "
+                  f"F1-score: {2 * (precision[best_idx] * recall[best_idx]) / (precision[best_idx] + recall[best_idx] + 1e-10):.4f}")
+
+        elif priority == "precision":
+            if min_precision is not None:
+                valid_indices = np.where(precision >= min_precision)[0]
+                if len(valid_indices) == 0:
+                    print(f"No threshold satisfies min_precision={min_precision}. Using threshold with highest precision.")
+                    best_idx = np.argmax(precision)
+                else:
+                    # Trong số các ngưỡng thỏa mãn, chọn ngưỡng có recall cao nhất
+                    valid_recalls = recall[valid_indices]
+                    best_idx = valid_indices[np.argmax(valid_recalls)]
+            else:
+                # Nếu không có yêu cầu tối thiểu, chọn ngưỡng có precision cao nhất
+                best_idx = np.argmax(precision)
+
+            best_threshold = thresholds[best_idx]
+            print(f"Best threshold (priority=precision, min_precision={min_precision}): {best_threshold:.4f}, "
+                  f"Precision: {precision[best_idx]:.4f}, "
+                  f"Recall: {recall[best_idx]:.4f}, "
+                  f"F1-score: {2 * (precision[best_idx] * recall[best_idx]) / (precision[best_idx] + recall[best_idx] + 1e-10):.4f}")
+
+        else:
+            raise ValueError("Priority must be one of 'f1', 'recall', or 'precision'")
+
         return best_threshold
 
     @staticmethod
@@ -72,13 +118,19 @@ class Utils:
         return metrics
 
     @staticmethod
-    def predict_lstm(model, X, y_true):
-        y_pred_probs = model.predict(X, verbose=0) # Silence the output
-        threshold = Utils.get_best_threshold(y_true, y_pred_probs)
-        # threshold = Utils.get_best_threshold(y_true, y_pred_probs)
-        print(f"\nUsing threshold: {threshold}")
-        y_pred = Utils.to_labels(y_pred_probs, threshold)
-        return Utils.get_entry(y_true, y_pred_probs, y_pred)
+    def predict_lstm(model, X, y_true, threshold=None):
+        y_pred_probs = model.predict(X, verbose=0)
+        if y_true is not None:
+            threshold = Utils.get_best_threshold(y_true, y_pred_probs, priority="f1")
+            print(f"\nUsing threshold: {threshold}")
+            y_pred = Utils.to_labels(y_pred_probs, threshold)
+            metrics = Utils.get_entry(y_true, y_pred_probs, y_pred)
+            return metrics, threshold
+        else:
+            if threshold is None:
+                raise ValueError("Threshold must be provided for inference when y_true is not available.")
+            y_pred = Utils.to_labels(y_pred_probs, threshold)
+            return y_pred, y_pred_probs
 
     @staticmethod
     def is_int(n):

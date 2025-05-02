@@ -270,25 +270,74 @@ def summarize_projects(df: pd.DataFrame,
              columns=['project', 'num_rows', 'missing_ratio', 'passed_ratio', 'failed_ratio'])
             .sort_values('num_rows', ascending=False))
 
+import pandas as pd
+import numpy as np
+
 def fill_nan_values(df):
-    """Điền giá trị NaN theo logic đã định."""
+    """Điền giá trị NaN theo logic phù hợp với ý nghĩa của từng feature."""
     df = df.copy()
     groupby_project = df.groupby('gh_project_name')
-    df['tr_log_num_tests_failed'] = groupby_project['tr_log_num_tests_failed'].transform(lambda x: x.fillna(0))
+
+    # Số test thất bại: Điền 0 nếu không có thông tin
+    df['tr_log_num_tests_failed'] = groupby_project['tr_log_num_tests_failed'].transform(
+        lambda x: x.fillna(0)
+    )
+
+    # Thời gian build: Nội suy tuyến tính, sau đó điền bằng trung bình nhóm hoặc 0 giây
     df['tr_duration'] = groupby_project['tr_duration'].transform(
-        lambda x: x.interpolate(method='linear', limit_direction='both').ffill().bfill().fillna(0))
-    for col in ['git_num_commits', 'gh_num_issue_comments', 'gh_num_pr_comments', 'git_diff_src_churn', 
-                'git_diff_test_churn', 'gh_diff_files_added', 'gh_diff_files_deleted', 'gh_diff_files_modified',
-                'gh_diff_src_files', 'gh_diff_doc_files', 'gh_diff_other_files', 'gh_diff_tests_added', 
-                'gh_diff_tests_deleted', 'gh_num_commits_on_files_touched', 'gh_test_lines_per_kloc', 
-                'gh_test_cases_per_kloc', 'gh_asserts_cases_per_kloc']:
+        lambda x: x.interpolate(method='linear', limit_direction='both')
+                   .ffill()
+                   .bfill()
+                   .fillna(x.mean() if not pd.isna(x.mean()) else 0)
+    )
+
+    # Các cột số nguyên không âm: Điền 0 nếu không có thay đổi/bình luận/commit
+    integer_cols = [
+        'git_num_commits',
+        'gh_num_issue_comments',
+        'gh_num_pr_comments',
+        'gh_num_commit_comments',
+        'git_diff_src_churn',
+        'git_diff_test_churn',
+        'gh_diff_files_added',
+        'gh_diff_files_deleted',
+        'gh_diff_files_modified',
+        'gh_diff_src_files',
+        'gh_diff_doc_files',
+        'gh_diff_other_files',
+        'gh_diff_tests_added',
+        'gh_diff_tests_deleted',
+        'gh_num_commits_on_files_touched'
+    ]
+    for col in integer_cols:
         df[col] = groupby_project[col].transform(lambda x: x.fillna(0))
+
+    # Các cột mật độ test: Điền bằng trung bình nhóm hoặc 0
+    density_cols = [
+        'gh_test_lines_per_kloc',
+        'gh_test_cases_per_kloc',
+        'gh_asserts_cases_per_kloc'
+    ]
+    for col in density_cols:
+        df[col] = groupby_project[col].transform(
+            lambda x: x.fillna(x.mean() if not pd.isna(x.mean()) else 0)
+        )
+
+    # Boolean: Điền bằng mode hoặc 0
     df['gh_by_core_team_member'] = groupby_project['gh_by_core_team_member'].transform(
-        lambda x: x.fillna(x.mode()[0] if not x.mode().empty else 0))
+        lambda x: x.fillna(x.mode()[0] if not x.mode().empty else 0)
+    )
+
+    # Số nhà phát triển: Điền bằng trung vị nhóm hoặc 1
     df['gh_team_size'] = groupby_project['gh_team_size'].transform(
-        lambda x: x.fillna(x.mean() if not pd.isna(x.mean()) else 1))
+        lambda x: x.fillna(x.median() if not pd.isna(x.median()) else 1)
+    )
+
+    # Số dòng mã nguồn: Điền bằng trung vị nhóm hoặc 0
     df['gh_sloc'] = groupby_project['gh_sloc'].transform(
-        lambda x: x.fillna(x.mean() if not pd.isna(x.mean()) else 0))
+        lambda x: x.fillna(x.median() if not pd.isna(x.median()) else 0)
+    )
+
     return df
 
 def encode_categorical_columns(df, columns, project_col='gh_project_name'):

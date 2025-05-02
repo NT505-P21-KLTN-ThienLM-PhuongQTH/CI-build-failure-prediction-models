@@ -1,7 +1,7 @@
 import numpy as np
 from imblearn.over_sampling import SMOTE
 
-from src.data.feature_analysis import prepare_features, scale_features
+from src.data.feature_analysis import prepare_features
 from src.helpers import Utils
 
 

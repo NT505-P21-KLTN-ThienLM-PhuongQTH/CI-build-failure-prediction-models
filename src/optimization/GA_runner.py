@@ -1,8 +1,8 @@
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, List, Tuple, Any
-from helpers import Utils
-from optimization.optimizer import Optimizer
+from src.helpers import Utils
+from src.optimization.optimizer import Optimizer
 
 class GARunner:
     def __init__(self, ga_params: Dict[str, Any] = None):

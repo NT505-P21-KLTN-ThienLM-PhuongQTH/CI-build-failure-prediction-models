@@ -3,6 +3,11 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 from sklearn.metrics import roc_curve, auc
+import mlflow
+import os
+import plotly.graph_objects as go
+import plotly.subplots as sp
+
 
 def plot_line(df, column, project, figsize=(10, 4)):
     """Vẽ biểu đồ đường cho một cột."""
@@ -14,7 +19,7 @@ def plot_line(df, column, project, figsize=(10, 4)):
     plt.grid(True, linestyle='--', alpha=0.5)
     plt.legend()
     plt.tight_layout()
-    plt.show()
+    # plt.show()
 
 def plot_pie(df, column_counts, title, figsize=(3, 3)):
     """Vẽ biểu đồ tròn."""
@@ -22,7 +27,7 @@ def plot_pie(df, column_counts, title, figsize=(3, 3)):
     plt.pie(df['Ratio (%)'], labels=df[column_counts], autopct='%1.1f%%', startangle=140, colors=plt.cm.Paired.colors)
     plt.title(title)
     plt.axis('equal')
-    plt.show()
+    # plt.show()
 
 def plot_multi_project(df, column, project_column='gh_project_name', figsize=(12, 6), dropna=True):
     """Vẽ biểu đồ cho nhiều dự án, tùy chọn xử lý NaN."""
@@ -44,7 +49,7 @@ def plot_multi_project(df, column, project_column='gh_project_name', figsize=(12
     plt.legend(loc='upper right', fontsize=8)
     plt.grid(True)
     plt.tight_layout()
-    plt.show()
+    # plt.show()
 
 
 def plot_feature_importance(importance_df, title="Feature Importance (Average Across Models)", top_n=None):
@@ -82,7 +87,7 @@ def plot_feature_importance(importance_df, title="Feature Importance (Average Ac
 
     plt.tight_layout()
     plt.gca().invert_yaxis()
-    plt.show()
+    # plt.show()
 
 
 def plot_class_distribution(train_sets, test_sets, proj_name):
@@ -127,10 +132,9 @@ def plot_class_distribution(train_sets, test_sets, proj_name):
     plt.xticks(x, [f'Fold {i + 1}' for i in folds])
     plt.legend()
     plt.tight_layout()
-    plt.show()
 
 
-def plot_roc_curve(y_true, y_pred_probs, proj_name, fold_idx, save_path=None):
+def plot_roc_curve(y_true, y_pred_probs, proj_name, fold_idx):
     """
     Vẽ đường cong ROC và tính AUC.
 
@@ -145,49 +149,170 @@ def plot_roc_curve(y_true, y_pred_probs, proj_name, fold_idx, save_path=None):
     fpr, tpr, _ = roc_curve(y_true, y_pred_probs)
     roc_auc = auc(fpr, tpr)
 
-    # Vẽ đường cong ROC
-    plt.figure(figsize=(8, 6))
-    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (AUC = {roc_auc:.2f})')
-    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--', label='Random Guess')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate (FPR)')
-    plt.ylabel('True Positive Rate (TPR)')
-    plt.title(f'ROC Curve - {proj_name} (Fold {fold_idx + 1})')
-    plt.legend(loc="lower right")
+    # Tạo biểu đồ ROC bằng Plotly
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=fpr, y=tpr,
+        mode='lines',
+        name=f'ROC curve (AUC = {roc_auc:.2f})',
+        line=dict(color='darkorange', width=2)
+    ))
+    fig.add_trace(go.Scatter(
+        x=[0, 1], y=[0, 1],
+        mode='lines',
+        name='Random Guess',
+        line=dict(color='navy', width=2, dash='dash')
+    ))
 
-    # Lưu biểu đồ nếu có đường dẫn
-    if save_path:
-        plt.savefig(save_path)
-        print(f"ROC curve saved at: {save_path}")
+    # Cập nhật layout
+    fig.update_layout(
+        title=f'ROC Curve - {proj_name} (Fold {fold_idx + 1})',
+        xaxis_title='False Positive Rate (FPR)',
+        yaxis_title='True Positive Rate (TPR)',
+        xaxis=dict(range=[0.0, 1.0]),
+        yaxis=dict(range=[0.0, 1.05]),
+        legend=dict(x=0.7, y=0.1),
+        width=800,
+        height=600
+    )
 
-    plt.show()
-    plt.close()
+    # Lưu biểu đồ dưới dạng HTML và log vào MLflow
+    html_path = f"roc_curve_{proj_name}_fold_{fold_idx + 1}.html"
+    fig.write_html(html_path)
+    mlflow.log_artifact(html_path, artifact_path="plots/roc")
+    os.remove(html_path)
+    print(f"Logged ROC curve for {proj_name} (Fold {fold_idx + 1}) to MLflow")
 
-def plot_training_history(history, proj_name, fold_idx, save_path=None):
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-    ax1.plot(history.history['loss'], label='Train Loss', color='blue')
-    ax1.plot(history.history['val_loss'], label='Validation Loss', color='orange')
-    ax1.set_title(f'Loss - {proj_name} (Fold {fold_idx + 1})')
-    ax1.set_xlabel('Epoch')
-    ax1.set_ylabel('Loss')
-    ax1.legend(loc='upper right')
-    ax1.grid(True)
+def plot_training_history(history, proj_name, fold_idx):
+    # Tạo subplot với 1 hàng, 2 cột
+    fig = sp.make_subplots(rows=1, cols=2, subplot_titles=("Loss", "Accuracy"))
 
-    ax2.plot(history.history['accuracy'], label='Train Accuracy', color='blue')
-    ax2.plot(history.history['val_accuracy'], label='Validation Accuracy', color='orange')
-    ax2.set_title(f'Accuracy - {proj_name} (Fold {fold_idx + 1})')
-    ax2.set_xlabel('Epoch')
-    ax2.set_ylabel('Accuracy')
-    ax2.legend(loc='lower right')
-    ax2.grid(True)
+    # Biểu đồ Loss
+    epochs = list(range(1, len(history.history['loss']) + 1))
+    fig.add_trace(
+        go.Scatter(x=epochs, y=history.history['loss'], mode='lines', name='Train Loss', line=dict(color='blue')),
+        row=1, col=1
+    )
+    fig.add_trace(
+        go.Scatter(x=epochs, y=history.history['val_loss'], mode='lines', name='Validation Loss',
+                   line=dict(color='orange')),
+        row=1, col=1
+    )
 
-    plt.tight_layout()
+    # Biểu đồ Accuracy
+    fig.add_trace(
+        go.Scatter(x=epochs, y=history.history['accuracy'], mode='lines', name='Train Accuracy',
+                   line=dict(color='blue')),
+        row=1, col=2
+    )
+    fig.add_trace(
+        go.Scatter(x=epochs, y=history.history['val_accuracy'], mode='lines', name='Validation Accuracy',
+                   line=dict(color='orange')),
+        row=1, col=2
+    )
 
-    if save_path:
-        plt.savefig(save_path)
-        print(f"Training history plot saved at: {save_path}")
+    # Cập nhật layout
+    fig.update_layout(
+        title=f'Training History - {proj_name} (Fold {fold_idx + 1})',
+        width=1200,
+        height=500
+    )
+    fig.update_xaxes(title_text="Epoch", row=1, col=1)
+    fig.update_xaxes(title_text="Epoch", row=1, col=2)
+    fig.update_yaxes(title_text="Loss", row=1, col=1)
+    fig.update_yaxes(title_text="Accuracy", row=1, col=2)
 
-    plt.show()
-    plt.close()
+    # Lưu biểu đồ dưới dạng HTML và log vào MLflow
+    html_path = f"training_history_{proj_name}_fold_{fold_idx + 1}.html"
+    fig.write_html(html_path)
+    mlflow.log_artifact(html_path, artifact_path="plots/training_history")
+    os.remove(html_path)
+    print(f"Logged training history plot for {proj_name} (Fold {fold_idx + 1}) to MLflow")
+
+def plot_metrics(train_entries, test_entries, title, COLUMNS_RES):
+    train_df = pd.DataFrame(train_entries)[COLUMNS_RES]
+    test_df = pd.DataFrame(test_entries)[COLUMNS_RES]
+
+    print(f"\n{title} - Train Results:")
+    print(train_df.groupby(['proj', 'exp']).mean(numeric_only=True))
+    print(f"\n{title} - Test Results:")
+    print(test_df.groupby(['proj', 'exp']).mean(numeric_only=True))
+
+    # Tạo biểu đồ AUC
+    fig_auc = go.Figure()
+    for proj in test_df['proj'].unique():
+        proj_data = test_df[test_df['proj'] == proj]
+        fig_auc.add_trace(go.Box(
+            y=proj_data['AUC'],
+            name=proj,
+            boxpoints='all',
+            jitter=0.3,
+            pointpos=-1.8
+        ))
+    fig_auc.update_layout(
+        title=f'AUC ({title})',
+        xaxis_title='Project',
+        yaxis_title='AUC'
+    )
+
+    # Tạo biểu đồ Accuracy
+    fig_accuracy = go.Figure()
+    for proj in test_df['proj'].unique():
+        proj_data = test_df[test_df['proj'] == proj]
+        fig_accuracy.add_trace(go.Box(
+            y=proj_data['accuracy'],
+            name=proj,
+            boxpoints='all',
+            jitter=0.3,
+            pointpos=-1.8
+        ))
+    fig_accuracy.update_layout(
+        title=f'Accuracy ({title})',
+        xaxis_title='Project',
+        yaxis_title='Accuracy'
+    )
+
+    # Tạo biểu đồ F1
+    fig_f1 = go.Figure()
+    for proj in test_df['proj'].unique():
+        proj_data = test_df[test_df['proj'] == proj]
+        fig_f1.add_trace(go.Box(
+            y=proj_data['F1'],
+            name=proj,
+            boxpoints='all',
+            jitter=0.3,
+            pointpos=-1.8
+        ))
+    fig_f1.update_layout(
+        title=f'F1 ({title})',
+        xaxis_title='Project',
+        yaxis_title='F1'
+    )
+
+    # Ghi các biểu đồ vào MLflow
+    html_path_auc = f"{title.lower().replace(' ', '_')}_auc.html"
+    html_path_accuracy = f"{title.lower().replace(' ', '_')}_accuracy.html"
+    html_path_f1 = f"{title.lower().replace(' ', '_')}_f1.html"
+    fig_auc.write_html(html_path_auc)
+    fig_accuracy.write_html(html_path_accuracy)
+    fig_f1.write_html(html_path_f1)
+    mlflow.log_artifact(html_path_auc, artifact_path="plots/metrics")
+    mlflow.log_artifact(html_path_accuracy, artifact_path="plots/metrics")
+    mlflow.log_artifact(html_path_f1, artifact_path="plots/metrics")
+    os.remove(html_path_auc)
+    os.remove(html_path_accuracy)
+    os.remove(html_path_f1)
+    print(f"Logged interactive metrics plots for {title} to MLflow")
+
+    # fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    # for i, metric in enumerate(['AUC', 'accuracy', 'F1']):
+    #     test_df.boxplot(column=metric, by='proj', ax=axes[i])
+    #     axes[i].set_title(f"{metric} ({title})")
+    #     axes[i].set_xlabel("Project")
+    #     axes[i].set_ylabel(metric)
+    #     axes[i].tick_params(axis='x', rotation=45)
+
+
+    # plt.tight_layout()
+    # # plt.show()

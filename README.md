@@ -27,3 +27,9 @@ CI-build-failure-prediction
 │── README.md
 │── requirements.txt
 ```
+```aiignore
+dvc remote add -d myremote s3://dvc
+dvc remote modify myremote endpointurl http://<YOUR_IP>:9000
+dvc remote modify myremote access_key_id minio
+dvc remote modify myremote secret_access_key minio123
+```

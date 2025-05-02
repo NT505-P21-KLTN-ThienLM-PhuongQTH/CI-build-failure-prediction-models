@@ -13,3 +13,5 @@ numpy
 matplotlib
 seaborn
 mlflow
+dvc
+dotenv
