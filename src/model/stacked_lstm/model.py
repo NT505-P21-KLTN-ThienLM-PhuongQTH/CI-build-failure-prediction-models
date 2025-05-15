@@ -14,7 +14,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 MODEL_DIR = os.path.join(PROJECT_ROOT, "models", "stacked_lstm")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-def construct_lstm_model(network_params, train_set, pretrained_model_path=None, fine_tune=True, experiment_name="LSTM_Experiment"):
+def construct_lstm_model(network_params, train_set, pretrained_model_path=None, experiment_name="LSTM_Experiment"):
     start_time = timer()
 
     # Construct and train the LSTM model.
@@ -24,16 +24,15 @@ def construct_lstm_model(network_params, train_set, pretrained_model_path=None, 
     if pretrained_model_path:
         print(f"Loading pretrained model from {pretrained_model_path}...")
         model = mlflow.keras.load_model(pretrained_model_path)
-        if fine_tune:
-            print("Fine-tuning the pretrained model...")
-            # for layer in model.layers[:-1]:  # Freeze all layers except the last
-            #     layer.trainable = False
-            num_layers = len(model.layers)
-            freeze_until = num_layers // 2  # Đóng băng nửa đầu các tầng
-            for layer in model.layers[:freeze_until]:
-                layer.trainable = False
-            for layer in model.layers[freeze_until:]:
-                layer.trainable = True
+        print("Fine-tuning the pretrained model...")
+        # for layer in model.layers[:-1]:  # Freeze all layers except the last
+        #     layer.trainable = False
+        num_layers = len(model.layers)
+        freeze_until = num_layers // 2  # Đóng băng nửa đầu các tầng
+        for layer in model.layers[:freeze_until]:
+            layer.trainable = False
+        for layer in model.layers[freeze_until:]:
+            layer.trainable = True
     else:
         model = Sequential()
         model.add(Input(shape=(X_train.shape[1], X_train.shape[2])))

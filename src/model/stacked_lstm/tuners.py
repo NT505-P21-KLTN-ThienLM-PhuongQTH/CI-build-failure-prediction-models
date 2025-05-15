@@ -59,7 +59,7 @@ def fn_lstm_pso(drop_proba=0.01, nb_units=32, nb_epochs=2, nb_batch=4, nb_layers
     res = construct_lstm_model(network_params, globals()['data'])
     return 1 - float(res["validation_loss"])
 
-def evaluate_tuner(tuner_option, train_set, experiment_name="Online_Validation", pretrained_model_path=None, fine_tune=True):
+def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None):
     # Evaluate the specified tuner.
     global data
     data = train_set
@@ -83,7 +83,7 @@ def evaluate_tuner(tuner_option, train_set, experiment_name="Online_Validation",
         ga_runner = GARunner()
         best_params, best_model, entry_train, history = ga_runner.generate(
             all_possible_params, construct_lstm_model, data,
-            pretrained_model_path=pretrained_model_path, fine_tune=fine_tune
+            pretrained_model_path=pretrained_model_path
         )
 
     elif tuner_option == "tpe":
@@ -92,7 +92,7 @@ def evaluate_tuner(tuner_option, train_set, experiment_name="Online_Validation",
         best = fmin(train_lstm_with_hyperopt, param_space, algo=tpe.suggest, max_evals=CONFIG.get('MAX_EVAL'),
                     trials=trials)
         best_params = {k: all_possible_params[k][v] for k, v in best.items()}
-        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path, fine_tune=fine_tune)
+        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path)
         entry_train, best_model = res["entry"], res["model"]
 
     elif tuner_option == "pso":
@@ -107,7 +107,7 @@ def evaluate_tuner(tuner_option, train_set, experiment_name="Online_Validation",
         }
         best_params, _, _ = optunity.maximize_structured(fn_lstm_pso, params_PSO, num_evals=CONFIG.get('MAX_EVAL'))
         best_params = convert_from_PSO(best_params)
-        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path, fine_tune=fine_tune)
+        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path)
         entry_train, best_model = res["entry"], res["model"]
 
     elif tuner_option == "bohb":
@@ -130,7 +130,7 @@ def evaluate_tuner(tuner_option, train_set, experiment_name="Online_Validation",
         res = bohb.run(n_iterations=CONFIG.get('NBR_GEN'))
         best = res.get_incumbent_id()
         best_params = res.get_id2config_mapping()[best]['config']
-        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path, fine_tune=fine_tune)
+        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path)
         entry_train, best_model = res["entry"], res["model"]
         bohb.shutdown(shutdown_workers=True)
         NS.shutdown()
@@ -141,7 +141,7 @@ def evaluate_tuner(tuner_option, train_set, experiment_name="Online_Validation",
         best = fmin(train_lstm_with_hyperopt, param_space, algo=rand.suggest,
                     max_evals=CONFIG.get('MAX_EVAL', trials=trials))
         best_params = {k: all_possible_params[k][v] for k, v in best.items()}
-        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path, fine_tune=fine_tune)
+        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path)
         entry_train, best_model = res["entry"], res["model"]
 
     elif tuner_option == "default":
@@ -149,7 +149,7 @@ def evaluate_tuner(tuner_option, train_set, experiment_name="Online_Validation",
             'nb_units': 64, 'nb_layers': 3, 'optimizer': 'adam', 'time_step': 30,
             'nb_epochs': 10, 'nb_batch': 64, 'drop_proba': 0.1
         }
-        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path, fine_tune=fine_tune)
+        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path)
         entry_train, best_model = res["entry"], res["model"]
 
     end = timer()

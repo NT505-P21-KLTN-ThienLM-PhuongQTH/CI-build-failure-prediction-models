@@ -1,9 +1,61 @@
 import numpy as np
 from imblearn.over_sampling import SMOTE
-
-from src.data.feature_analysis import prepare_features
+import os
 from src.helpers import Utils
 
+def preprocess_training(dataset_dir):
+    """
+    Load and validate datasets from the given directory (already preprocessed).
+
+    Args:
+        dataset_dir (str): Directory containing preprocessed datasets (e.g., data/processed-local).
+
+    Returns:
+        dict: Dictionary of loaded datasets with file names as keys.
+    """
+    if not os.path.exists(dataset_dir):
+        raise FileNotFoundError(f"Dataset directory {dataset_dir} does not exist.")
+
+    datasets = {}
+    # List all CSV files in the dataset directory
+    for file_name in os.listdir(dataset_dir):
+        if not file_name.endswith(".csv"):
+            continue
+
+        print(f"Loading preprocessed dataset {file_name}...")
+        try:
+            dataset = Utils.get_dataset(file_name, dataset_dir)
+            dataset.drop(columns=["gh_project_name"], inplace=True)
+
+            if 'build_failed' not in dataset.columns:
+                raise ValueError(f"Target column 'build_failed' not found in {file_name}")
+            # Drop unnecessary columns
+            # Add to the datasets dictionary
+            datasets[file_name] = dataset
+            print(f"Loaded {file_name} with {len(dataset)} samples")
+        except Exception as e:
+            print(f"Error loading {file_name}: {e}")
+
+    if not datasets:
+        raise ValueError(f"No valid datasets found in {dataset_dir}")
+    return datasets
+
+def prepare_features(df, target_column='build_failed'):
+    """Chuẩn bị dữ liệu cho phân tích feature importance.
+    Cảnh báo nếu có cột không phải kiểu số."""
+    numeric_types = ['int64', 'float64', 'int32', 'float32']
+
+    excluded_columns = [target_column, "gh_build_started_at", "gh_project_name"]
+    non_numeric_cols = [
+        col for col in df.columns
+        if df[col].dtype.name not in numeric_types and col not in excluded_columns
+    ]
+    if non_numeric_cols:
+        print(f"[WARNING] The following columns are not numeric and will be discarded: {non_numeric_cols}")
+    # Chuẩn bị dữ liệu đầu vào và nhãn
+    X = df.select_dtypes(include=numeric_types).drop(columns=excluded_columns, errors='ignore')
+    y = df[target_column]
+    return X, y
 
 def apply_smote(training_set, y):
     """
@@ -63,8 +115,12 @@ def test_preprocess(dataset_train, dataset_test, time_step):
     X_train, _ = prepare_features(dataset_train)
     X_test, y_test = prepare_features(dataset_test)
 
-    # X_train_scaled, scaler = scale_features(X_train)
-    # X_test_scaled, _ = scale_features(X_test, scaler=scaler)
+    # In thông tin shape và tên các cột
+    print("X_train shape:", X_train.shape)
+    print("X_train columns:", list(X_train.columns))
+
+    print("\nX_test shape:", X_test.shape)
+    print("X_test columns:", list(X_test.columns))
 
     dataset_total = np.vstack((X_train.values, X_test.values))
 

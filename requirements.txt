@@ -15,3 +15,5 @@ seaborn
 mlflow
 dvc
 dotenv
+plotly
+boto3

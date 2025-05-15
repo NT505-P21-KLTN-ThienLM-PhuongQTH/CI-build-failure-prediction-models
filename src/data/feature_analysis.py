@@ -123,13 +123,6 @@ def aggregate_feature_importance(X, y):
     combined_importance = combined_importance.sort_values(by='Average_Importance', ascending=False)
     return combined_importance
 
-def prepare_features(df, target_column='build_failed'):
-    """Chuẩn bị dữ liệu cho phân tích feature importance."""
-    # Loại bỏ các cột không phải số hoặc không liên quan
-    columns_to_drop = [target_column, "gh_build_started_at", "gh_project_name", "tr_build_id"]
-    X = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).drop(columns=columns_to_drop, errors='ignore')
-    y = df[target_column]
-    return X, y
 
 def print_nan_columns(dfs=None, selected_projects=None, df=None):
     """

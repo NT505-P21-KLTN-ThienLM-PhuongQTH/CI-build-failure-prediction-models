@@ -5,8 +5,6 @@ import os
 import glob
 from collections import defaultdict
 
-from src.data.feature_analysis import aggregate_feature_importance
-
 # Định nghĩa dtype cho các cột đặc biệt
 DTYPE_SPEC = {
     "git_diff_src_churn": "float32",
@@ -241,6 +239,7 @@ def process_status(df: pd.DataFrame, status_column: str) -> pd.DataFrame:
     df['build_failed'] = df[status_column].map(m)
     df = df.dropna(subset=['build_failed'])
     df['build_failed'] = df['build_failed'].astype(int)
+    df = df.drop(columns=[status_column])
     return df
 
 def summarize_projects(df: pd.DataFrame,
