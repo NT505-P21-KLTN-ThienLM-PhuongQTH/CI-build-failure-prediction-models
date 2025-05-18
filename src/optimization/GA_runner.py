@@ -35,16 +35,16 @@ class GARunner:
         if not 0 <= self.ga_params["mutate_chance"] <= 1:
             raise ValueError("mutate_chance must be between 0 and 1")
 
-    def _train_solution(self, solution: Any, fn_train: Callable, params_fn: Dict, index: int, pretrained_model_path=None) -> None:
+    def _train_solution(self, solution: Any, fn_train: Callable, params_fn: Dict, index: int, pretrained_model_path=None,padding_module=None ) -> None:
         # Train a single solution and handle exceptions.
         try:
-            solution.train_model(fn_train, params_fn, pretrained_model_path=pretrained_model_path)
+            solution.train_model(fn_train, params_fn, pretrained_model_path=pretrained_model_path, padding_module=padding_module)
             print(f"\nSolution {index} trained")
         except Exception as e:
             print(f"Error training solution {index}: {str(e)}")
             raise
 
-    def train_population(self, population: List[Any], fn_train: Callable, params_fn: Dict, pretrained_model_path=None) -> None:
+    def train_population(self, population: List[Any], fn_train: Callable, params_fn: Dict, pretrained_model_path=None, padding_module=None) -> None:
         # Train the entire population using multithreading.
         if not population:
             print("Empty population, skipping training")
@@ -53,7 +53,7 @@ class GARunner:
         with tqdm(total=len(population), desc="\nTraining Population") as pbar:
             with ThreadPoolExecutor(max_workers=len(population)) as executor:
                 futures = [
-                    executor.submit(self._train_solution, sol, fn_train, params_fn, i, pretrained_model_path)
+                    executor.submit(self._train_solution, sol, fn_train, params_fn, i, pretrained_model_path, padding_module=padding_module)
                     for i, sol in enumerate(population, start=1)
                 ]
                 for future in futures:
@@ -78,7 +78,7 @@ class GARunner:
         for i, sol in enumerate(top_solutions, 1):
             print(f"Top {i} solution: Score = {sol.score:.4f}, Params = {sol.params}, Entry = {sol.entry}")
 
-    def generate(self, all_possible_params: Dict[str, List], fn_train: Callable, params_fn: Dict, pretrained_model_path=None) -> Tuple[Dict, Any, Dict, Any]:
+    def generate(self, all_possible_params: Dict[str, List], fn_train: Callable, params_fn: Dict, pretrained_model_path=None, padding_module=None) -> Tuple[Dict, Any, Dict, Any]:
         # Generate the best parameters using a genetic algorithm.
         if not all_possible_params or not isinstance(all_possible_params, dict):
             raise ValueError("all_possible_params must be a non-empty dictionary")
@@ -91,7 +91,7 @@ class GARunner:
 
         for generation in range(self.ga_params['max_generations']):
             print(f"\n===== Generation {generation + 1} =====")
-            self.train_population(population, fn_train, params_fn, pretrained_model_path)
+            self.train_population(population, fn_train, params_fn, pretrained_model_path, padding_module)
 
             avg_score = self.get_average_score(population)
             print(f"Generation Average Score: {avg_score:.4f}")

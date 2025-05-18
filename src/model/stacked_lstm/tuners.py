@@ -58,7 +58,7 @@ def fn_lstm_pso(drop_proba=0.01, nb_units=32, nb_epochs=2, nb_batch=4, nb_layers
     res = construct_lstm_model(network_params, globals()['data'])
     return 1 - float(res["validation_loss"])
 
-def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None):
+def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None, padding_module=None):
     # Evaluate the specified tuner.
     global data
     data = train_set
@@ -82,7 +82,7 @@ def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None):
         ga_runner = GARunner()
         best_params, best_model, entry_train, history = ga_runner.generate(
             all_possible_params, construct_lstm_model, data,
-            pretrained_model_path=pretrained_model_path
+            pretrained_model_path=pretrained_model_path, padding_module=padding_module
         )
 
     elif tuner_option == "tpe":

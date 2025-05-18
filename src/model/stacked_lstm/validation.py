@@ -44,7 +44,7 @@ def log_mlflow(params=None, metrics=None, history=None, prefix=""):
             for epoch, value in enumerate(values, 1):
                 mlflow.log_metric(f"{prefix}{metric_name}_{epoch}", value, step=epoch)
 
-def run_online_validation(tuner="ga", datasets=None):
+def run_online_validation(tuner="ga", datasets=None, padding_module=None):
     all_train_entries = []
     all_test_entries = []
     if datasets is None:
@@ -80,7 +80,7 @@ def run_online_validation(tuner="ga", datasets=None):
             for fold_idx, (train_set, test_set) in enumerate(zip(train_sets, test_sets)):
                 for iteration in range(1, CONFIG['NBR_REP'] + 1):
                     print(f"\n[Proj {file_name} | Fold {fold_idx + 1} | Iter {iteration}] Training...")
-                    entry_train = evaluate_tuner(tuner, train_set, pretrained_model_path=None)
+                    entry_train = evaluate_tuner(tuner, train_set, pretrained_model_path=None, padding_module=padding_module)
 
                     history = entry_train.get("history")
                     metrics = entry_train["entry"]
@@ -203,7 +203,7 @@ def run_online_validation(tuner="ga", datasets=None):
         plot_metrics(all_train_entries, all_test_entries, "Online Validation", COLUMNS_RES)
         return datasets[bellwether], datasets, bellwether_model_uri
 
-def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_model_uri=None, tuner="ga", ):
+def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_model_uri=None, tuner="ga", padding_module=None ):
     all_train_entries = []
     all_test_entries = []
 
@@ -221,7 +221,7 @@ def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_mo
         for iteration in range(1, CONFIG['NBR_REP'] + 1):
             print(f"[Cross-Project | Iter {iteration}] Training on Bellwether...")
             with mlflow.start_run(run_name=f"training_iter_{iteration}", nested=True):
-                entry_train = evaluate_tuner(tuner, bellwether_dataset, bellwether_model_uri)
+                entry_train = evaluate_tuner(tuner, bellwether_dataset, bellwether_model_uri, padding_module=padding_module)
                 current_model = entry_train["model"]
                 current_params = entry_train["params"]
 
@@ -254,15 +254,15 @@ def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_mo
                 if test_set is not bellwether_dataset:
                     print(f"Testing on {file_name} with Transfer Learning...")
                     with mlflow.start_run(run_name=f"fine_tune_{file_name}", nested=True):
-                        X_test, _ = test_preprocess(bellwether_dataset, test_set, best_params["time_step"])
+                        X_test, _ = test_preprocess(bellwether_dataset, test_set, best_params["time_step"], padding_module=padding_module)
 
                         # Fine-tune the model
                         fine_tune_params = best_params.copy()
                         fine_tune_params["nb_epochs"] = 5
-                        entry_fine_tune = construct_lstm_model(fine_tune_params, test_set, pretrained_model_path=bellwether_model_path)
+                        entry_fine_tune = construct_lstm_model(fine_tune_params, test_set, pretrained_model_path=bellwether_model_path, padding_module=padding_module)
                         fine_tuned_model = entry_fine_tune["model"]
 
-                        X_test, y_test = test_preprocess(bellwether_dataset, test_set, best_params["time_step"])
+                        X_test, y_test = test_preprocess(bellwether_dataset, test_set, best_params["time_step"], padding_module=padding_module)
                         entry_test, threshold = Utils.predict_lstm(fine_tuned_model, X_test, y_test)
                         entry_test.update({
                             "iter": iteration, "proj": file_name, "exp": 1, "algo": MODEL_NAME

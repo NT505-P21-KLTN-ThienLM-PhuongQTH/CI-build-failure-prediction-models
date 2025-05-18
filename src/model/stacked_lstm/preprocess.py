@@ -46,19 +46,21 @@ def apply_smote(training_set, y):
         dist = dict(zip(unique, counts / len(y_smote)))
         print(dist)
         return X_smote, y_smote
-    else:
-        return training_set, y
+    return training_set, y
 
-def train_preprocess(dataset_train, time_step):
+def train_preprocess(dataset_train, time_step, padding_module=None):
     X, y = prepare_features(dataset_train, target_column='build_failed')
-    # X_scaled, _ = scale_features(X)
     training_set = X.values
 
     # Limit time_step to the length of the training set
     ###TEMP
     if len(training_set) < time_step:
-        print(f"Adjusting time_step from {time_step} to {len(training_set) - 1}")
-        time_step = max(1, len(training_set) - 1)
+        if padding_module is None:
+            raise ValueError(
+                f"Dữ liệu huấn luyện quá ngắn ({len(training_set)} < {time_step}) và không có PaddingModule.")
+        print(f"Padding dữ liệu huấn luyện từ {len(training_set)} lên {time_step}...")
+        training_set = padding_module.pad_sequence(training_set, time_step)
+        y = np.pad(y, (time_step - len(y), 0), mode='constant', constant_values=0)
 
     training_set, y_smote = apply_smote(training_set, y)
 
@@ -74,7 +76,7 @@ def train_preprocess(dataset_train, time_step):
     return X_train, y_train
 
 
-def test_preprocess(dataset_train, dataset_test, time_step):
+def test_preprocess(dataset_train, dataset_test, time_step, padding_module=None):
     X_train, _ = prepare_features(dataset_train)
     X_test, y_test = prepare_features(dataset_test)
 
@@ -88,7 +90,10 @@ def test_preprocess(dataset_train, dataset_test, time_step):
     dataset_total = np.vstack((X_train.values, X_test.values))
 
     if len(dataset_total) < time_step + len(dataset_test):
-        raise ValueError("Not enough data for test sequences")
+        if padding_module is None:
+            raise ValueError("Không đủ dữ liệu cho test sequences và không có PaddingModule.")
+        print(f"Padding dữ liệu test từ {len(dataset_total)} lên {time_step + len(dataset_test)}...")
+        dataset_total = padding_module.pad_sequence(dataset_total, time_step + len(dataset_test))
 
     inputs = dataset_total[-len(dataset_test) - time_step:]
     X_test = np.lib.stride_tricks.sliding_window_view(inputs, (time_step, inputs.shape[1]))[:-1]

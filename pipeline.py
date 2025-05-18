@@ -4,10 +4,13 @@ import mlflow
 import mlflow.keras
 from dotenv import load_dotenv
 from src.data.processing import get_dataset
-from src.model.padding_evaluation.evaluation import evaluate_padding
+from src.model.stacked_lstm.preprocess import prepare_features
+
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
-from src.model.stacked_lstm.validation import run_online_validation, run_cross_project_validation
+from src.model.stacked_lstm.validation import run_online_validation, run_cross_project_validation, MODEL_DIR
+
 sys.path.append(PROJECT_ROOT)
+from src.model.padding_module import PaddingModule
 
 # Set MLflow tracking URI to the project root
 mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
@@ -34,6 +37,17 @@ def training(tuner="ga", datasets=None):
     mlflow.set_experiment(MODEL_NAME)
     if mlflow.active_run() is not None: mlflow.end_run()
     with mlflow.start_run(run_name=MODEL_NAME):
+        # Huấn luyện PaddingModule
+        print("Training PaddingModule...")
+        sample_df = next(iter(datasets.values()))  # Lấy một DataFrame mẫu để xác định input_dim
+        X, _ = prepare_features(sample_df, target_column='build_failed')
+        input_dim = X.shape[1]
+        padding_module = PaddingModule(input_dim=input_dim, time_step=30)  # time_step mặc định
+        padding_module.train(datasets, epochs=20, batch_size=32)
+        padding_module_path = os.path.join(MODEL_DIR, "padding_module")
+        padding_module.save_model(padding_module_path)
+        mlflow.keras.log_model(padding_module.model, artifact_path="padding_module")
+
         # Step: Model Training and Validation
         print("Running Online Validation and Selecting Bellwether...")
         bellwether_dataset, all_datasets, bellwether_model_uri = run_online_validation(tuner=tuner, datasets=datasets)
@@ -49,4 +63,3 @@ if __name__ == "__main__":
         rev=os.getenv("DAGSHUB_BRANCH")
     )
     training(datasets=datasets)
-    evaluate_padding(model_name=MODEL_NAME, datasets=datasets)
