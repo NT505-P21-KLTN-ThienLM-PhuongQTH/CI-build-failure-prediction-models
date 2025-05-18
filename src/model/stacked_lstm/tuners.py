@@ -1,6 +1,5 @@
+# src/model/stacked_lstm/tuners.py
 import numpy as np
-import mlflow
-import mlflow.keras
 from hyperopt import hp, fmin, tpe, rand, Trials, STATUS_OK
 import optunity
 import ConfigSpace as CS
@@ -73,7 +72,7 @@ def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None):
         'nb_batch': [4, 8, 16, 32, 64],  # Power of 2
         'nb_layers': [1, 2, 3, 4],
         'optimizer': ['adam', 'rmsprop'],
-        'time_step': list(range(30, 61))
+        'time_step': list(range(20, 40))
     }
 
     start = timer()
@@ -154,19 +153,6 @@ def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None):
 
     end = timer()
     entry_train.update({"time": end - start, "params": best_params, "model": best_model})
-    # best_model_path = os.path.join(MODEL_DIR, f"best_lstm_{proj_name}_fold{fold_idx}_iter{iter_idx}.keras")
-    # best_model.save(best_model_path)
-    # print(f"Best model saved at: {best_model_path}")
-
-    # mlflow.log_params(best_params)
-    # mlflow.log_metric("F1", entry_train["F1"])
-    # mlflow.log_metric("AUC", entry_train["AUC"])
-    # mlflow.log_metric("accuracy", entry_train["accuracy"])
-    # mlflow.log_metric("training_time", end - start)
-
-    # model_path = os.path.join(MODEL_DIR, f"best_lstm_model_{experiment_name}.keras")
-    # best_model.save(model_path)
-    # mlflow.log_artifact(model_path, artifact_path="best_lstm_model")
 
     history = history if tuner_option == "ga" else None
     return {"entry": entry_train, "params": best_params, "model": best_model, "history": history}

@@ -65,16 +65,8 @@ def construct_lstm_model(network_params, train_set, pretrained_model_path=None, 
     entry, threshold = Utils.predict_lstm(model, X_train, y_train)
     entry['validation_loss'] = validation_loss
 
-
-    model_path = os.path.join(MODEL_DIR, f"lstm_model_{experiment_name}.keras")
-    model.save(model_path)
-
     end_time = timer()
     training_time = end_time - start_time
     print(f"\nTraining time: {training_time:.2f} seconds")
-
-    # model_path = os.path.join(MODEL_DIR, f"lstm_{network_params['nb_units']}_{network_params['nb_layers']}.keras")
-    # model.save(model_path)
-    # print(f"Model saved: {model_path}")
 
     return {'validation_loss': validation_loss, 'model': model, 'entry': entry, 'history': history}

@@ -1,16 +1,14 @@
-import json
+# src/model/stacked_lstm/validation.py
 import os
 import pandas as pd
 import mlflow
 import mlflow.keras
 from src.model.stacked_lstm.model import construct_lstm_model
-from src.model.stacked_lstm.preprocess import test_preprocess, apply_smote, prepare_features, preprocess_training
+from src.model.stacked_lstm.preprocess import test_preprocess, apply_smote, prepare_features
 from src.model.stacked_lstm.tuners import evaluate_tuner, CONFIG
 from src.helpers import Utils
 from src.data.visualization import plot_class_distribution, plot_roc_curve, plot_training_history, plot_metrics
 import numpy as np
-from dotenv import load_dotenv
-load_dotenv()
 
 # Define project root and centralize directories
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -46,14 +44,13 @@ def log_mlflow(params=None, metrics=None, history=None, prefix=""):
             for epoch, value in enumerate(values, 1):
                 mlflow.log_metric(f"{prefix}{metric_name}_{epoch}", value, step=epoch)
 
-def run_online_validation(tuner="ga", dataset_dir="../data/processed"):
+def run_online_validation(tuner="ga", datasets=None):
     all_train_entries = []
     all_test_entries = []
+    if datasets is None:
+        raise ValueError("No datasets provided for online validation.")
 
     with mlflow.start_run(run_name="Online_Validation_Main", nested=True):
-        print(f"Loading datasets from {dataset_dir}...")
-        datasets = preprocess_training(dataset_dir)
-
         dataset_sizes = {file_name: len(df) for file_name, df in datasets.items()}
         top_10_files = sorted(dataset_sizes.items(), key=lambda x: x[1], reverse=True)[:10]
         top_10_files = [f for f, _ in top_10_files]
@@ -64,7 +61,6 @@ def run_online_validation(tuner="ga", dataset_dir="../data/processed"):
         best_models = {}
         for file_name, dataset in datasets.items():
             best_f1 = -1
-            best_model_path = None
             best_model = None
             best_params = None
             best_history = None
@@ -271,13 +267,6 @@ def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_mo
                         entry_test.update({
                             "iter": iteration, "proj": file_name, "exp": 1, "algo": MODEL_NAME
                         })
-
-                        # mlflow.log_metric(f"test_F1", entry_test["F1"])
-                        # mlflow.log_metric(f"test_AUC", entry_test["AUC"])
-                        # mlflow.log_metric(f"test_accuracy", entry_test["accuracy"])
-                        # mlflow.log_metric(f"test_recall", entry_test["recall"])
-                        # mlflow.log_metric(f"test_precision", entry_test["precision"])
-                        # mlflow.log_param("best_threshold", threshold)
                         log_mlflow(params={"best_threshold": threshold, **best_params},
                                    metrics=entry_test,
                                    prefix="test_")
@@ -304,16 +293,6 @@ def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_mo
                 # Đăng ký mô hình vào Model Registry
                 model_uri = f"runs:/{mlflow.active_run().info.run_id}/{best_model_name}"
                 mlflow.register_model(model_uri, MODEL_NAME)
-
-                # mlflow.log_param("best_project", best_project)
-                # mlflow.log_param("best_iteration", best_iteration)
-                # mlflow.log_param("best_threshold", best_threshold)
-                # mlflow.log_param("best_time_step", best_time_step)
-                # mlflow.log_metric("best_f1", best_f1)
-                # mlflow.log_metric("best_auc", best_auc)
-                # mlflow.log_metric("best_accuracy", best_accuracy)
-                # mlflow.log_metric("best_recall", best_recall)
-                # mlflow.log_metric("best_precision", best_precision)
                 log_mlflow (params={"best_project": best_project, "best_iteration": best_iteration,
                            "best_threshold": best_threshold, "best_time_step": best_time_step},
                            metrics={"best_f1": best_f1, "best_auc": best_auc, "best_accuracy": best_accuracy,

@@ -1,9 +1,11 @@
 import pandas as pd
-import numpy as np
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 import os
 import glob
 from collections import defaultdict
+from dotenv import load_dotenv
+from dagshub.streaming import DagsHubFilesystem
+load_dotenv()
 
 # Định nghĩa dtype cho các cột đặc biệt
 DTYPE_SPEC = {
@@ -92,6 +94,49 @@ MAPPINGS = {
         "tr_build_id": "tr_build_id", "tr_job_id": "tr_job_id",
     }
 }
+
+
+def get_dataset(repo_url, data_path, rev="main", file_list=None):
+    """
+    Load and validate datasets from a DagsHub repo via DagsHubFilesystem (no local sync).
+
+    Args:
+        repo_url (str): URL of the DagsHub repo (e.g., https://dagshub.com/user/project).
+        data_path (str): Path inside the repo where preprocessed data is stored (e.g., "data/processed-local").
+        rev (str): Git revision (branch, tag, or commit hash). Default is "main".
+        file_list (list): List of CSV filenames to load (e.g., ["data1.csv", "data2.csv"]).
+
+    Returns:
+        dict: Dictionary with file names as keys and pandas DataFrames as values.
+    """
+    fs = DagsHubFilesystem(".", repo_url=repo_url, branch=rev)
+    if file_list is None:
+        file_list = [
+            f for f in fs.listdir(data_path)
+            if f.endswith(".csv")
+        ]
+
+    if not file_list:
+        raise ValueError(f"No CSV files found in {data_path} on DagsHub repo {repo_url}")
+
+    datasets = {}
+    # Xử lý từng file
+    for file_name in file_list:
+        print(f"Loading preprocessed dataset {file_name}...")
+        try:
+            file_path = os.path.join(data_path, file_name)
+            with fs.open(file_path, "r") as f:
+                dataset = pd.read_csv(f)
+            if 'build_failed' not in dataset.columns:
+                raise ValueError(f"Target column 'build_failed' not found in {file_name}")
+
+            datasets[file_name] = dataset
+            print(f"Loaded {file_name} with {len(dataset)} samples")
+        except Exception as e:
+            print(f"Error loading {file_name}: {e}")
+    if not datasets:
+        raise RuntimeError("No datasets loaded from DagsHub.")
+    return datasets
 
 def group_files_by_columns(folder_path):
     """Phân loại file CSV theo cấu trúc cột."""

@@ -17,3 +17,5 @@ dvc
 dotenv
 plotly
 boto3
+dvc
+dagshub

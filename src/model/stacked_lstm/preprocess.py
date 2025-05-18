@@ -1,51 +1,14 @@
+# src/model/stacked-lstm/preprocess.py
 import numpy as np
 from imblearn.over_sampling import SMOTE
-import os
 from src.helpers import Utils
-
-def preprocess_training(dataset_dir):
-    """
-    Load and validate datasets from the given directory (already preprocessed).
-
-    Args:
-        dataset_dir (str): Directory containing preprocessed datasets (e.g., data/processed-local).
-
-    Returns:
-        dict: Dictionary of loaded datasets with file names as keys.
-    """
-    if not os.path.exists(dataset_dir):
-        raise FileNotFoundError(f"Dataset directory {dataset_dir} does not exist.")
-
-    datasets = {}
-    # List all CSV files in the dataset directory
-    for file_name in os.listdir(dataset_dir):
-        if not file_name.endswith(".csv"):
-            continue
-
-        print(f"Loading preprocessed dataset {file_name}...")
-        try:
-            dataset = Utils.get_dataset(file_name, dataset_dir)
-            dataset.drop(columns=["gh_project_name"], inplace=True)
-
-            if 'build_failed' not in dataset.columns:
-                raise ValueError(f"Target column 'build_failed' not found in {file_name}")
-            # Drop unnecessary columns
-            # Add to the datasets dictionary
-            datasets[file_name] = dataset
-            print(f"Loaded {file_name} with {len(dataset)} samples")
-        except Exception as e:
-            print(f"Error loading {file_name}: {e}")
-
-    if not datasets:
-        raise ValueError(f"No valid datasets found in {dataset_dir}")
-    return datasets
 
 def prepare_features(df, target_column='build_failed'):
     """Chuẩn bị dữ liệu cho phân tích feature importance.
     Cảnh báo nếu có cột không phải kiểu số."""
     numeric_types = ['int64', 'float64', 'int32', 'float32']
 
-    excluded_columns = [target_column, "gh_build_started_at", "gh_project_name"]
+    excluded_columns = ["gh_build_started_at", "gh_project_name"]
     non_numeric_cols = [
         col for col in df.columns
         if df[col].dtype.name not in numeric_types and col not in excluded_columns
@@ -89,10 +52,10 @@ def apply_smote(training_set, y):
 def train_preprocess(dataset_train, time_step):
     X, y = prepare_features(dataset_train, target_column='build_failed')
     # X_scaled, _ = scale_features(X)
-
     training_set = X.values
 
     # Limit time_step to the length of the training set
+    ###TEMP
     if len(training_set) < time_step:
         print(f"Adjusting time_step from {time_step} to {len(training_set) - 1}")
         time_step = max(1, len(training_set) - 1)
