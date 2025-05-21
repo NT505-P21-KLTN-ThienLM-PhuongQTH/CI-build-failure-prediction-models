@@ -1,20 +1,15 @@
 import os
-
 import numpy as np
 from keras.models import Sequential
 from keras.layers import LSTM, Dense, Dropout, Input
 from keras.callbacks import EarlyStopping
-import pandas as pd
-from src.helpers import Utils
 import mlflow
-
 from src.model.stacked_lstm.preprocess import prepare_features
-
 
 class PaddingModule:
     def __init__(self, input_dim, time_step, units=64, drop_proba=0.1):
-        self.input_dim = input_dim  # Số lượng đặc trưng
-        self.time_step = time_step  # Số timestep tối đa
+        self.input_dim = input_dim
+        self.time_step = time_step
         self.units = units
         self.drop_proba = drop_proba
         self.model = self._build_model()
@@ -107,12 +102,16 @@ class PaddingModule:
 
         return padded_seq
 
-    def save_model(self, path):
-        """Lưu mô hình PaddingModule."""
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        if not path.endswith(".keras") and not path.endswith(".h5"):
-            path += ".keras"
-        self.model.save(path)
+    def save_model(self, model_name):
+        """Đăng ký mô hình PaddingModule vào MLflow Model Registry."""
+        if mlflow.active_run():
+            mlflow.keras.log_model(self.model, artifact_path="padding_model")
+            # Đăng ký mô hình vào Model Registry
+            model_uri = f"runs:/{mlflow.active_run().info.run_id}/padding_model"
+            mlflow.register_model(model_uri, model_name)
+            print(f"Mô hình đã được đăng ký với tên {model_name} tại {model_uri}")
+        else:
+            raise RuntimeError("Không có MLflow run đang hoạt động, không thể đăng ký mô hình.")
 
     def load_model(self, path):
         """Tải mô hình PaddingModule."""

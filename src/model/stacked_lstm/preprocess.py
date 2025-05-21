@@ -1,4 +1,6 @@
 # src/model/stacked-lstm/preprocess.py
+import random
+import mlflow
 import numpy as np
 from imblearn.over_sampling import SMOTE
 from src.helpers import Utils
@@ -31,29 +33,30 @@ def apply_smote(training_set, y):
     Returns:
         tuple: (balanced training_set, balanced y)
     """
-    if Utils.CONFIG['WITH_SMOTE'] and len(np.unique(y)) > 1:
-        print("\nClass Distribution BEFORE SMOTE:")
-        unique, counts = np.unique(y, return_counts=True)
-        dist = dict(zip(unique, counts / len(y)))
-        print(dist)
+    if not Utils.CONFIG['WITH_SMOTE'] or len(np.unique(y)) <= 1:
+        print("SMOTE skipped: Config disabled or single class.")
+        return training_set, y
 
-        print("\nApplying SMOTE...")
-        smote = SMOTE(random_state=42)
-        X_smote, y_smote = smote.fit_resample(training_set, y)
+    print("\nClass Distribution BEFORE SMOTE:")
+    unique, counts = np.unique(y, return_counts=True)
+    dist = dict(zip(unique, counts / len(y)))
+    print(dist)
 
-        print("Class Distribution AFTER SMOTE:")
-        unique, counts = np.unique(y_smote, return_counts=True)
-        dist = dict(zip(unique, counts / len(y_smote)))
-        print(dist)
-        return X_smote, y_smote
-    return training_set, y
+    print("\nApplying SMOTE...")
+    smote = SMOTE(random_state=42)
+    X_smote, y_smote = smote.fit_resample(training_set, y)
+
+    print("Class Distribution AFTER SMOTE:")
+    unique, counts = np.unique(y_smote, return_counts=True)
+    dist = dict(zip(unique, counts / len(y_smote)))
+    print(dist)
+    return X_smote, y_smote
 
 def train_preprocess(dataset_train, time_step, padding_module=None):
     X, y = prepare_features(dataset_train, target_column='build_failed')
     training_set = X.values
 
-    # Limit time_step to the length of the training set
-    ###TEMP
+    # Padding nếu dữ liệu không đủ cho time_step
     if len(training_set) < time_step:
         if padding_module is None:
             raise ValueError(
@@ -75,15 +78,12 @@ def train_preprocess(dataset_train, time_step, padding_module=None):
     print(f"X_train shape: {X_train.shape}, y_train shape: {y_train.shape}")
     return X_train, y_train
 
-
-def test_preprocess(dataset_train, dataset_test, time_step, padding_module=None):
+def test_preprocess(dataset_train, dataset_test, time_step, padding_module=None, short_timestep=None):
     X_train, _ = prepare_features(dataset_train)
     X_test, y_test = prepare_features(dataset_test)
 
-    # In thông tin shape và tên các cột
     print("X_train shape:", X_train.shape)
     print("X_train columns:", list(X_train.columns))
-
     print("\nX_test shape:", X_test.shape)
     print("X_test columns:", list(X_test.columns))
 
@@ -98,5 +98,18 @@ def test_preprocess(dataset_train, dataset_test, time_step, padding_module=None)
     inputs = dataset_total[-len(dataset_test) - time_step:]
     X_test = np.lib.stride_tricks.sliding_window_view(inputs, (time_step, inputs.shape[1]))[:-1]
     X_test = np.squeeze(X_test, axis=1)
+    y_test = y_test[-len(X_test):]
+
+    # Nếu cần mô phỏng chuỗi thiếu
+    if short_timestep is not None and short_timestep < time_step:
+        print(f"Giả lập thiếu chuỗi: giữ {short_timestep} dòng cuối, rồi padding lại về {time_step}...")
+        padded_sequences = []
+        for seq in X_test:
+            short_seq = seq[-short_timestep:]
+            padded_seq = padding_module.pad_sequence(short_seq, time_step)
+            padded_sequences.append(padded_seq)
+        X_test = np.array(padded_sequences)
+        assert len(X_test) == len(y_test), "Số lượng X_test và y_test không khớp!"
+
     print(f"X_test shape: {X_test.shape}, y_test shape: {y_test.shape}")
     return X_test, y_test

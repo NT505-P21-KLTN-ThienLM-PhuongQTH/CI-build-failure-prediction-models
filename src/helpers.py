@@ -1,3 +1,4 @@
+import mlflow
 from sklearn.metrics import f1_score, roc_auc_score, accuracy_score, precision_score, recall_score, roc_curve, \
     average_precision_score, precision_recall_curve
 import numpy as np
@@ -172,3 +173,27 @@ class Utils:
             test_sets.append(test_set)
 
         return train_sets, test_sets
+
+    @staticmethod
+    def log_mlflow(params=None, metrics=None, history=None, prefix=""):
+        """
+        Log parameters and metrics to MLflow.
+
+        Args:
+            params (dict): Dictionary of parameters to log.
+            metrics (dict): Dictionary of metrics to log.
+            prefix (str): Optional prefix for metric keys (e.g., 'train_', 'test_').
+        """
+        if params:
+            for key, value in params.items():
+                mlflow.log_param(key, value)
+
+        if metrics:
+            for key, value in metrics.items():
+                if isinstance(value, (int, float)):
+                    mlflow.log_metric(f"{prefix}{key}", value)
+
+        if history:
+            for metric_name, values in history.items():
+                for epoch, value in enumerate(values, 1):
+                    mlflow.log_metric(f"{prefix}{metric_name}_{epoch}", value, step=epoch)

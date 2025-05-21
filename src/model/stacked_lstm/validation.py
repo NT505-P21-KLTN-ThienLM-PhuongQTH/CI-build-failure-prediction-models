@@ -1,5 +1,7 @@
 # src/model/stacked_lstm/validation.py
 import os
+import random
+
 import pandas as pd
 import mlflow
 import mlflow.keras
@@ -19,30 +21,6 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 
 COLUMNS_RES = ["proj", "algo", "iter", "AUC", "accuracy", "F1", "exp"]
 MODEL_NAME = "Stacked-LSTM"
-
-
-def log_mlflow(params=None, metrics=None, history=None, prefix=""):
-    """
-    Log parameters and metrics to MLflow.
-
-    Args:
-        params (dict): Dictionary of parameters to log.
-        metrics (dict): Dictionary of metrics to log.
-        prefix (str): Optional prefix for metric keys (e.g., 'train_', 'test_').
-    """
-    if params:
-        for key, value in params.items():
-            mlflow.log_param(key, value)
-
-    if metrics:
-        for key, value in metrics.items():
-            if isinstance(value, (int, float)):
-                mlflow.log_metric(f"{prefix}{key}", value)
-
-    if history:
-        for metric_name, values in history.items():
-            for epoch, value in enumerate(values, 1):
-                mlflow.log_metric(f"{prefix}{metric_name}_{epoch}", value, step=epoch)
 
 def run_online_validation(tuner="ga", datasets=None, padding_module=None):
     all_train_entries = []
@@ -107,7 +85,12 @@ def run_online_validation(tuner="ga", datasets=None, padding_module=None):
 
                     current_model = entry_train["model"]
                     current_params = entry_train["params"]
-                    X_test, y_test = test_preprocess(train_set, test_set, current_params["time_step"])
+                    if padding_module is not None:
+                        time_step = current_params["time_step"]
+                        short_timestep = random.randint(2, time_step - 1)
+                        X_test, y_test = test_preprocess(train_set, test_set, current_params["time_step"], padding_module=padding_module,short_timestep=short_timestep)
+                    else:
+                        X_test, y_test = test_preprocess(train_set, test_set, current_params["time_step"])
                     entry_test, threshold = Utils.predict_lstm(current_model, X_test, y_test)
 
                     entry_test.update({
@@ -134,7 +117,7 @@ def run_online_validation(tuner="ga", datasets=None, padding_module=None):
                 continue
 
             with mlflow.start_run(run_name=f"{file_name}_best_model", nested=True) as run:
-                log_mlflow(
+                Utils.log_mlflow(
                     params={
                         "project": file_name,
                         "fold": best_fold_idx + 1,
@@ -188,7 +171,7 @@ def run_online_validation(tuner="ga", datasets=None, padding_module=None):
             model_name = f"bellwether_model_{sanitized_bellwether}"
             mlflow.keras.log_model(bellwether_info["model"], artifact_path=model_name)
             bellwether_model_uri = f"runs:/{mlflow.active_run().info.run_id}/{model_name}"
-            log_mlflow(
+            Utils.log_mlflow(
                 metrics=bellwether_info["entry_test"],
                 history=bellwether_info["history"].history if bellwether_info["history"] else None,
                 prefix="bellwether_"
@@ -212,8 +195,6 @@ def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_mo
     best_threshold = None
     best_project = None
     best_iteration = None
-    best_params = None
-    best_metrics = None
 
     bellwether_model_paths = []
 
@@ -247,27 +228,30 @@ def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_mo
                     bellwether_model_uri = f"runs:/{mlflow.active_run().info.run_id}/{model_name}"
                     bellwether_model_paths.append((bellwether_model_uri, best_params, best_metric))
 
-                log_mlflow(params=current_params, metrics=current_metrics, prefix="bellwether_train_")
+                Utils.log_mlflow(params=current_params, metrics=current_metrics, prefix="bellwether_train_")
 
         for iteration, (bellwether_model_path, best_params, best_metric) in enumerate(bellwether_model_paths, 1):
             for file_name, test_set in all_datasets.items():
                 if test_set is not bellwether_dataset:
                     print(f"Testing on {file_name} with Transfer Learning...")
                     with mlflow.start_run(run_name=f"fine_tune_{file_name}", nested=True):
-                        X_test, _ = test_preprocess(bellwether_dataset, test_set, best_params["time_step"], padding_module=padding_module)
-
                         # Fine-tune the model
                         fine_tune_params = best_params.copy()
                         fine_tune_params["nb_epochs"] = 5
                         entry_fine_tune = construct_lstm_model(fine_tune_params, test_set, pretrained_model_path=bellwether_model_path, padding_module=padding_module)
                         fine_tuned_model = entry_fine_tune["model"]
 
-                        X_test, y_test = test_preprocess(bellwether_dataset, test_set, best_params["time_step"], padding_module=padding_module)
+                        if padding_module is not None:
+                            time_step = best_params["time_step"]
+                            short_timestep = random.randint(2, time_step - 1)
+                            X_test, y_test = test_preprocess(bellwether_dataset, test_set, time_step, padding_module=padding_module, short_timestep=short_timestep)
+                        else:
+                            X_test, y_test = test_preprocess(bellwether_dataset, test_set, best_params["time_step"])
                         entry_test, threshold = Utils.predict_lstm(fine_tuned_model, X_test, y_test)
                         entry_test.update({
                             "iter": iteration, "proj": file_name, "exp": 1, "algo": MODEL_NAME
                         })
-                        log_mlflow(params={"best_threshold": threshold, **best_params},
+                        Utils.log_mlflow(params={"best_threshold": threshold, **best_params},
                                    metrics=entry_test,
                                    prefix="test_")
 
@@ -293,11 +277,18 @@ def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_mo
                 # Đăng ký mô hình vào Model Registry
                 model_uri = f"runs:/{mlflow.active_run().info.run_id}/{best_model_name}"
                 mlflow.register_model(model_uri, MODEL_NAME)
-                log_mlflow (params={"best_project": best_project, "best_iteration": best_iteration,
-                           "best_threshold": best_threshold, "best_time_step": best_time_step},
-                           metrics={"best_f1": best_f1, "best_auc": best_auc, "best_accuracy": best_accuracy,
-                                    "best_recall": best_recall, "best_precision": best_precision},)
+                Utils.log_mlflow (
+                    params={
+                        "best_project": best_project, "best_iteration": best_iteration,
+                        "best_threshold": best_threshold, "best_time_step": best_time_step,
+                        "input_dim": X_test.shape[2],
+                    },
+                    metrics={
+                        "best_f1": best_f1, "best_auc": best_auc, "best_accuracy": best_accuracy,
+                        "best_recall": best_recall, "best_precision": best_precision
+                    },
+                )
 
                 print(f"Best cross-project model registered as 'BuildFailureModel', F1: {best_f1}, "
                       f"Project: {best_project}, Iteration: {best_iteration}, Threshold: {best_threshold}")
-        plot_metrics(all_train_entries, all_test_entries, "Cross-Project Validation", COLUMNS_RES)
+        # plot_metrics(all_train_entries, all_test_entries, "Cross-Project Validation", COLUMNS_RES)

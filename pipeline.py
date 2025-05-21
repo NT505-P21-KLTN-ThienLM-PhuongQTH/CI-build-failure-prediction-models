@@ -36,17 +36,16 @@ def training(tuner="ga", datasets=None):
 
     mlflow.set_experiment(MODEL_NAME)
     if mlflow.active_run() is not None: mlflow.end_run()
-    with mlflow.start_run(run_name=MODEL_NAME):
-        # Huấn luyện PaddingModule
-        print("Training PaddingModule...")
-        sample_df = next(iter(datasets.values()))  # Lấy một DataFrame mẫu để xác định input_dim
-        X, _ = prepare_features(sample_df, target_column='build_failed')
-        input_dim = X.shape[1]
-        padding_module = PaddingModule(input_dim=input_dim, time_step=30)  # time_step mặc định
-        padding_module.train(datasets, epochs=20, batch_size=32)
-        padding_module_path = os.path.join(MODEL_DIR, "padding_module")
-        padding_module.save_model(padding_module_path)
-        mlflow.keras.log_model(padding_module.model, artifact_path="padding_module")
+    with mlflow.start_run(run_name=f"{MODEL_NAME}"):
+        # Step: Padding Module Training
+        with mlflow.start_run(run_name="Padding_Module", nested=True):
+            print("Training PaddingModule...")
+            sample_df = next(iter(datasets.values()))
+            X, _ = prepare_features(sample_df, target_column='build_failed')
+            input_dim = X.shape[1]
+            padding_module = PaddingModule(input_dim=input_dim, time_step=40)
+            padding_module.train(datasets, epochs=20, batch_size=32)
+            padding_module.save_model("Padding-Module")
 
         # Step: Model Training and Validation
         print("Running Online Validation and Selecting Bellwether...")
@@ -60,6 +59,7 @@ if __name__ == "__main__":
     datasets = get_dataset(
         repo_url=os.getenv("DAGSHUB_REPO"),
         data_path=os.getenv("DAGSHUB_DATA_PATH"),
-        rev=os.getenv("DAGSHUB_BRANCH")
+        rev=os.getenv("DAGSHUB_BRANCH"),
+        # file_list=["getsentry_sentry.csv"],
     )
     training(datasets=datasets)
