@@ -19,3 +19,5 @@ plotly
 boto3
 dvc
 dagshub
+pyngrok
+nest_asyncio

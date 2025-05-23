@@ -96,7 +96,7 @@ MAPPINGS = {
 }
 
 
-def get_dataset(repo_url, data_path, rev="main", file_list=None):
+def get_dataset(repo_url, data_path, rev="main", file_list=None, dagshub_token=None):
     """
     Load and validate datasets from a DagsHub repo via DagsHubFilesystem (no local sync).
 
@@ -109,7 +109,7 @@ def get_dataset(repo_url, data_path, rev="main", file_list=None):
     Returns:
         dict: Dictionary with file names as keys and pandas DataFrames as values.
     """
-    fs = DagsHubFilesystem(".", repo_url=repo_url, branch=rev)
+    fs = DagsHubFilesystem(".", repo_url=repo_url, branch=rev, token=dagshub_token)
     if file_list is None:
         file_list = [
             f for f in fs.listdir(data_path)

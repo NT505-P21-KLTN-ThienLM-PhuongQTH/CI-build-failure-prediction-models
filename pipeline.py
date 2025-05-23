@@ -4,6 +4,7 @@ import mlflow
 import mlflow.keras
 from dotenv import load_dotenv
 from src.data.processing import get_dataset
+from src.helpers import Utils
 from src.model.stacked_lstm.preprocess import prepare_features
 
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
@@ -46,6 +47,12 @@ def training(tuner="ga", datasets=None):
             padding_module = PaddingModule(input_dim=input_dim, time_step=40)
             padding_module.train(datasets, epochs=20, batch_size=32)
             padding_module.save_model("Padding-Module")
+            print("Evaluating PaddingModule...")
+            metrics = padding_module.evaluate(datasets, test_split=0.2)
+            print("Evaluation Metrics:")
+            for metric, value in metrics.items():
+                print(f"{metric}: {value:.4f}")
+            Utils.log_mlflow(metrics=metrics)
 
         # Step: Model Training and Validation
         print("Running Online Validation and Selecting Bellwether...")
