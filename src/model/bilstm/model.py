@@ -1,24 +1,25 @@
+# src/model/stacked_bilstm/model.py
 import mlflow
 import mlflow.keras
 from timeit import default_timer as timer
 import numpy as np
 from keras.models import Sequential
-from keras.layers import LSTM, Dense, Dropout, Input
+from keras.layers import LSTM, Dense, Dropout, Input, Bidirectional  # Add Bidirectional
 from keras.callbacks import EarlyStopping
 from sklearn.utils.class_weight import compute_class_weight
 from src.helpers import Utils
-from src.model.stacked_lstm.preprocess import train_preprocess
+from src.model.common.preprocess import train_preprocess  # Update path
 import os
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-MODEL_DIR = os.path.join(PROJECT_ROOT, "models", "stacked_lstm")
+MODEL_DIR = os.path.join(PROJECT_ROOT, "models", "stacked_bilstm")  # Update directory
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-def construct_lstm_model(network_params, train_set, pretrained_model_path=None, padding_module=None):
+def construct_bilstm_model(network_params, train_set, pretrained_model_path=None):
     start_time = timer()
 
-    # Construct and train the LSTM model.
-    X_train, y_train = train_preprocess(train_set, network_params["time_step"], padding_module=padding_module)
+    # Construct and train the BiLSTM model.
+    X_train, y_train = train_preprocess(train_set, network_params["time_step"])
     drop = network_params["drop_proba"]
 
     if pretrained_model_path:
@@ -34,12 +35,12 @@ def construct_lstm_model(network_params, train_set, pretrained_model_path=None, 
     else:
         model = Sequential()
         model.add(Input(shape=(X_train.shape[1], X_train.shape[2])))
-        model.add(LSTM(units=network_params["nb_units"],
-                       return_sequences=(network_params["nb_layers"] > 1)))
+        model.add(Bidirectional(LSTM(units=network_params["nb_units"],
+                                     return_sequences=(network_params["nb_layers"] > 1))))
         model.add(Dropout(drop))
         for i in range(1, network_params["nb_layers"]):
             is_last = (i == network_params["nb_layers"] - 1)
-            model.add(LSTM(units=network_params["nb_units"], return_sequences=not is_last))
+            model.add(Bidirectional(LSTM(units=network_params["nb_units"], return_sequences=not is_last)))
             model.add(Dropout(drop))
         model.add(Dense(1, activation='sigmoid'))
 
@@ -60,7 +61,7 @@ def construct_lstm_model(network_params, train_set, pretrained_model_path=None, 
         print(f"Error during model training: {e}")
         return {"validation_loss": float('inf'), "model": None, "entry": {'F1': 0, 'validation_loss': float('inf')}}
 
-    entry, threshold = Utils.predict_lstm(model, X_train, y_train)
+    entry, threshold = Utils.predict_lstm(model, X_train, y_train)  # Note: May need adjustment for BiLSTM
     entry['validation_loss'] = validation_loss
 
     end_time = timer()

@@ -197,3 +197,83 @@ class Utils:
             for metric_name, values in history.items():
                 for epoch, value in enumerate(values, 1):
                     mlflow.log_metric(f"{prefix}{metric_name}_{epoch}", value, step=epoch)
+
+    @staticmethod
+    def calculate_weighted_score(metrics, weights=None, threshold_upper=0.99, threshold_lower=0.7):
+        """
+        Tính điểm tổng hợp dựa trên các số liệu và trọng số, loại bỏ model có metric quá tuyệt đối hoặc quá thấp.
+
+        Args:
+            metrics (dict): Dictionary chứa các số liệu như AUC, F1, accuracy, recall, precision, PR_AUC.
+            weights (dict, optional): Trọng số cho từng số liệu. Nếu None, sử dụng mặc định.
+            threshold_upper (float): Ngưỡng trên để xác định metric quá tuyệt đối (mặc định 0.99).
+            threshold_lower (float): Ngưỡng dưới để loại bỏ metric quá thấp (mặc định 0.7).
+
+        Returns:
+            float: Điểm tổng hợp, hoặc -1 nếu model có metric quá tuyệt đối hoặc quá thấp.
+        """
+        # Trọng số mặc định cho bài toán dự đoán lỗi build CI
+        if weights is None:
+            weights = {
+                "AUC": 0.2,
+                "F1": 0.25,
+                "accuracy": 0.0,
+                "recall": 0.3,
+                "precision": 0.1,
+                "PR_AUC": 0.15
+            }
+
+        for metric in ["AUC", "F1", "accuracy", "recall", "precision", "PR_AUC"]:
+            value = metrics.get(metric, 0.0)
+            if not np.isnan(value):
+                if value >= threshold_upper or value < threshold_lower:
+                    return -1
+
+        score = 0.0
+        for metric, weight in weights.items():
+            value = metrics.get(metric, 0.0)
+            if not np.isnan(value):
+                score += weight * value
+
+        return score
+
+    @staticmethod
+    def build_log_entries(params, metrics, prefix=""):
+        # Chỉ giữ lại các param có giá trị khác None
+        flat_params = {
+            k: v for k, v in {
+                "project": params.get("project", ""),
+                "fold": params.get("fold", ""),
+                "iteration": params.get("iteration", ""),
+                "time_step": params.get("time_step"),
+                "threshold": params.get("threshold", None),
+                "input_dim": params.get("input_dim"),
+                "batch_size": params.get("batch_size"),
+                "drop_proba": params.get("drop_proba"),
+                "nb_units": params.get("nb_units"),
+                "nb_epochs": params.get("nb_epochs"),
+                "nb_batch": params.get("nb_batch"),
+                "nb_layers": params.get("nb_layers"),
+                "optimizer": params.get("optimizer", "")
+            }.items() if v is not None and v != ""
+        }
+
+        # Tương tự: chỉ log các metrics thực sự có giá trị
+        flat_metrics = {
+            k: v for k, v in {
+                "F1": metrics.get("F1"),
+                "AUC": metrics.get("AUC"),
+                "PR_AUC": metrics.get("PR_AUC"),
+                "accuracy": metrics.get("accuracy"),
+                "precision": metrics.get("precision"),
+                "recall": metrics.get("recall"),
+                "validation_loss": metrics.get("validation_loss"),
+                "score": metrics.get("score")
+            }.items() if v is not None
+        }
+
+        # Prefix metric keys nếu có
+        if prefix:
+            flat_metrics = {f"{prefix}{k}": v for k, v in flat_metrics.items()}
+
+        return flat_params, flat_metrics

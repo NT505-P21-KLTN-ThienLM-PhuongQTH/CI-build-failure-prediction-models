@@ -6,7 +6,7 @@ import ConfigSpace as CS
 from hpbandster.core.worker import Worker
 from hpbandster.optimizers import BOHB
 from src.optimization.GA_runner import GARunner
-from src.model.stacked_lstm.model import construct_lstm_model
+from src.model.lstm.model import construct_lstm_model
 from timeit import default_timer as timer
 import os
 
@@ -14,7 +14,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 MODEL_DIR = os.path.join(PROJECT_ROOT, "models", "stacked_lstm")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-CONFIG = {'MAX_EVAL': 10, 'NBR_REP': 1}
+CONFIG = {'MAX_EVAL': 10, 'NBR_REP': 2}
 
 class LSTMWorker(Worker):
     def __init__(self, train_set, **kwargs):
@@ -58,7 +58,7 @@ def fn_lstm_pso(drop_proba=0.01, nb_units=32, nb_epochs=2, nb_batch=4, nb_layers
     res = construct_lstm_model(network_params, globals()['data'])
     return 1 - float(res["validation_loss"])
 
-def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None, padding_module=None):
+def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None):
     # Evaluate the specified tuner.
     global data
     data = train_set
@@ -82,7 +82,7 @@ def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None, padding_
         ga_runner = GARunner()
         best_params, best_model, entry_train, history = ga_runner.generate(
             all_possible_params, construct_lstm_model, data,
-            pretrained_model_path=pretrained_model_path, padding_module=padding_module
+            pretrained_model_path=pretrained_model_path
         )
 
     elif tuner_option == "tpe":

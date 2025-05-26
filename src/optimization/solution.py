@@ -20,10 +20,10 @@ class Solution:
         # Set the hyperparameters for this solution.
         self.params = params
 
-    def train_model(self, fn_train, params_fn, metric="F1", pretrained_model_path=None, padding_module=None):
+    def train_model(self, fn_train, params_fn, metric="F1", pretrained_model_path=None):
         # Train the model using the provided training function and parameters.
         if self.score == 0.0:
-            res = fn_train(self.params, params_fn, pretrained_model_path=pretrained_model_path, padding_module=padding_module)
+            res = fn_train(self.params, params_fn, pretrained_model_path=pretrained_model_path)
             self.model = res['model']
             self.entry = res['entry']
             self.score = self.entry.get(metric, 0.0)  # Default to 0.0 if missing

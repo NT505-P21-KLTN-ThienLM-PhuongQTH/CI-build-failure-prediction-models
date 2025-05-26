@@ -52,18 +52,17 @@ def apply_smote(training_set, y):
     print(dist)
     return X_smote, y_smote
 
-def train_preprocess(dataset_train, time_step, padding_module=None):
+def train_preprocess(dataset_train, time_step):
     X, y = prepare_features(dataset_train, target_column='build_failed')
     training_set = X.values
 
     # Padding nếu dữ liệu không đủ cho time_step
     if len(training_set) < time_step:
-        if padding_module is None:
-            raise ValueError(
-                f"Dữ liệu huấn luyện quá ngắn ({len(training_set)} < {time_step}) và không có PaddingModule.")
-        print(f"Padding dữ liệu huấn luyện từ {len(training_set)} lên {time_step}...")
-        training_set = padding_module.pad_sequence(training_set, time_step)
-        y = np.pad(y, (time_step - len(y), 0), mode='constant', constant_values=0)
+        print(f"Padding dữ liệu huấn luyện từ {len(training_set)} lên {time_step} bằng chuỗi 0...")
+        num_padding = time_step - len(training_set)
+        padding = np.zeros((num_padding, training_set.shape[1]))
+        training_set = np.vstack((padding, training_set))
+        y = np.pad(y, (num_padding, 0), mode='constant', constant_values=0)
 
     training_set, y_smote = apply_smote(training_set, y)
 
@@ -78,7 +77,7 @@ def train_preprocess(dataset_train, time_step, padding_module=None):
     print(f"X_train shape: {X_train.shape}, y_train shape: {y_train.shape}")
     return X_train, y_train
 
-def test_preprocess(dataset_train, dataset_test, time_step, padding_module=None, short_timestep=None):
+def test_preprocess(dataset_train, dataset_test, time_step):
     X_train, _ = prepare_features(dataset_train)
     X_test, y_test = prepare_features(dataset_test)
 
@@ -90,26 +89,15 @@ def test_preprocess(dataset_train, dataset_test, time_step, padding_module=None,
     dataset_total = np.vstack((X_train.values, X_test.values))
 
     if len(dataset_total) < time_step + len(dataset_test):
-        if padding_module is None:
-            raise ValueError("Không đủ dữ liệu cho test sequences và không có PaddingModule.")
-        print(f"Padding dữ liệu test từ {len(dataset_total)} lên {time_step + len(dataset_test)}...")
-        dataset_total = padding_module.pad_sequence(dataset_total, time_step + len(dataset_test))
+        print(f"Padding dữ liệu test từ {len(dataset_total)} lên {time_step + len(dataset_test)} bằng chuỗi 0...")
+        num_padding = time_step + len(dataset_test) - len(dataset_total)
+        padding = np.zeros((num_padding, dataset_total.shape[1]))
+        dataset_total = np.vstack((padding, dataset_total))
 
     inputs = dataset_total[-len(dataset_test) - time_step:]
     X_test = np.lib.stride_tricks.sliding_window_view(inputs, (time_step, inputs.shape[1]))[:-1]
     X_test = np.squeeze(X_test, axis=1)
     y_test = y_test[-len(X_test):]
-
-    # Nếu cần mô phỏng chuỗi thiếu
-    if short_timestep is not None and short_timestep < time_step:
-        print(f"Giả lập thiếu chuỗi: giữ {short_timestep} dòng cuối, rồi padding lại về {time_step}...")
-        padded_sequences = []
-        for seq in X_test:
-            short_seq = seq[-short_timestep:]
-            padded_seq = padding_module.pad_sequence(short_seq, time_step)
-            padded_sequences.append(padded_seq)
-        X_test = np.array(padded_sequences)
-        assert len(X_test) == len(y_test), "Số lượng X_test và y_test không khớp!"
 
     print(f"X_test shape: {X_test.shape}, y_test shape: {y_test.shape}")
     return X_test, y_test
