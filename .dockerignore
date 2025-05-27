@@ -1,0 +1,9 @@
+notebooks/
+scripts/
+.gitignore
+Dockerfile
+docker-compose.yml
+tests
+.env.sample
+google_colab.md
+README.md
