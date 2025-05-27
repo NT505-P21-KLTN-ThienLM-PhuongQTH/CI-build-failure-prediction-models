@@ -7,3 +7,4 @@ tests
 .env.sample
 google_colab.md
 README.md
+consumer.md
