@@ -23,9 +23,9 @@ class ModelFactory:
     """Factory class to create and manage LSTM or BiLSTM models."""
 
     @staticmethod
-    def get_model_functions(model_type):
-        """Return the appropriate model functions based on model_type."""
-        if model_type.lower() == "lstm":
+    def get_model_functions(model_name):
+        """Return the appropriate model functions based on model_name."""
+        if model_name == "Stacked-LSTM":
             return {
                 "construct_model": construct_lstm_model,
                 "train_preprocess": lstm_train_preprocess,
@@ -33,9 +33,9 @@ class ModelFactory:
                 "evaluate_tuner": lstm_evaluate_tuner,
                 "run_online_validation": lstm_run_online_validation,
                 "run_cross_project_validation": lstm_run_cross_project_validation,
-                "model_name": "Stacked-LSTM"
+                "model_name": model_name
             }
-        elif model_type.lower() == "bilstm":
+        elif model_name == "Stacked-BiLSTM":
             return {
                 "construct_model": construct_bilstm_model,
                 "train_preprocess": bilstm_train_preprocess,
@@ -43,9 +43,9 @@ class ModelFactory:
                 "evaluate_tuner": bilstm_evaluate_tuner,
                 "run_online_validation": bilstm_run_online_validation,
                 "run_cross_project_validation": bilstm_run_cross_project_validation,
-                "model_name": "Stacked-BiLSTM"
+                "model_name": model_name
             }
-        elif model_type.lower() == "padding":
+        elif model_name == "Padding":
             return {
                 "construct_model": None,
                 "train_preprocess": None,
@@ -53,57 +53,57 @@ class ModelFactory:
                 "evaluate_tuner": None,
                 "run_online_validation": None,
                 "run_cross_project_validation": None,
-                "model_name": "PaddingModule",
+                "model_name": model_name,
                 "train_padding_module": ModelFactory.train_padding_module
             }
         else:
-            raise ValueError(f"Unsupported model_type: {model_type}. Choose 'lstm' or 'bilstm'.")
+            raise ValueError(f"Unsupported model_name: {model_name}. Choose 'Stacked-LSTM', 'Stacked-LSTM', or 'Padding'.")
 
     @staticmethod
-    def construct_model(model_type, network_params, train_set, pretrained_model_path=None):
+    def construct_model(model_name, network_params, train_set, pretrained_model_path=None):
         """Construct the specified model."""
-        model_funcs = ModelFactory.get_model_functions(model_type)
+        model_funcs = ModelFactory.get_model_functions(model_name)
         return model_funcs["construct_model"](network_params, train_set, pretrained_model_path)
 
     @staticmethod
-    def preprocess_train(model_type, dataset_train, time_step):
+    def preprocess_train(model_name, dataset_train, time_step):
         """Preprocess training data for the specified model."""
-        model_funcs = ModelFactory.get_model_functions(model_type)
+        model_funcs = ModelFactory.get_model_functions(model_name)
         return model_funcs["train_preprocess"](dataset_train, time_step)
 
     @staticmethod
-    def preprocess_test(model_type, dataset_train, dataset_test, time_step, short_timestep=None):
+    def preprocess_test(model_name, dataset_train, dataset_test, time_step, short_timestep=None):
         """Preprocess test data for the specified model."""
-        model_funcs = ModelFactory.get_model_functions(model_type)
+        model_funcs = ModelFactory.get_model_functions(model_name)
         return model_funcs["test_preprocess"](dataset_train, dataset_test, time_step, short_timestep)
 
     @staticmethod
-    def evaluate_tuner(model_type, tuner_option, train_set, pretrained_model_path=None):
+    def evaluate_tuner(model_name, tuner_option, train_set, pretrained_model_path=None):
         """Run hyperparameter tuning for the specified model."""
-        model_funcs = ModelFactory.get_model_functions(model_type)
+        model_funcs = ModelFactory.get_model_functions(model_name)
         return model_funcs["evaluate_tuner"](tuner_option, train_set, pretrained_model_path)
 
     @staticmethod
-    def run_online_validation(model_type, tuner="ga", datasets=None):
+    def run_online_validation(model_name, tuner="ga", datasets=None):
         """Run online validation for the specified model."""
-        model_funcs = ModelFactory.get_model_functions(model_type)
+        model_funcs = ModelFactory.get_model_functions(model_name)
         return model_funcs["run_online_validation"](tuner, datasets)
 
     @staticmethod
-    def run_cross_project_validation(model_type, bellwether_dataset, all_datasets,
+    def run_cross_project_validation(model_name, bellwether_dataset, all_datasets,
                                     bellwether_model_uri=None, tuner="ga"):
         """Run cross-project validation for the specified model."""
-        model_funcs = ModelFactory.get_model_functions(model_type)
+        model_funcs = ModelFactory.get_model_functions(model_name)
         return model_funcs["run_cross_project_validation"](bellwether_dataset, all_datasets, bellwether_model_uri, tuner)
 
     @staticmethod
-    def get_model_name(model_type):
+    def get_model_name(model_name):
         """Get the model name for the specified model type."""
-        model_funcs = ModelFactory.get_model_functions(model_type)
+        model_funcs = ModelFactory.get_model_functions(model_name)
         return model_funcs["model_name"]
 
     @staticmethod
-    def train_padding_module(datasets, input_dim=None, time_step=40, epochs=20, batch_size=32, r2_threshold=0.7,
+    def train_padding_module(model_name, datasets, input_dim=None, time_step=40, epochs=20, batch_size=32, r2_threshold=0.7,
                              max_iterations=5):
         """Train the PaddingModule independently."""
         print("Training PaddingModule...")
@@ -118,6 +118,8 @@ class ModelFactory:
             r2_threshold=r2_threshold,
             max_iterations=max_iterations
         )
+        # Save the trained model
+        padding_module.model.save(model_name)
         print("Evaluation Metrics:", metrics)
         print("Zeroed Features:", zeroed_features)
         return padding_module

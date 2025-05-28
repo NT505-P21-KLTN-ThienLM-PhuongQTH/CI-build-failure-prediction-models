@@ -76,17 +76,17 @@ channel.queue_purge(queue=queue_name)
 def callback(ch, method, properties, body):
     print("Received message...")
     try:
-        # Phân tích message JSON để lấy model_type
+        # Phân tích message JSON để lấy model_name
         message = json.loads(body.decode())
-        model_type = message.get("model_type", "lstm")  # Mặc định là 'lstm' nếu không có model_type
-        if model_type not in ["lstm", "bilstm", "padding"]:
-            raise ValueError(f"Invalid model_type: {model_type}. Must be 'lstm', 'bilstm', or 'padding'.")
+        model_name = message.get("model_name", "Padding")
+        if model_name not in ["Stacked-LSTM", "Stacked-BiLSTM", "Padding"]:
+            raise ValueError(f"Invalid model_name: {model_name}. Must be 'Stacked-LSTM', 'Stacked-BiLSTM', or 'Padding'.")
 
-        print(f"Running pipeline.py with model_type={model_type}...")
+        print(f"Running pipeline.py with model_name={model_name}...")
         os.chdir(repo_dir)
-        # Chạy pipeline.py với tham số model_type
+        # Chạy pipeline.py với tham số model_name
         process = subprocess.Popen(
-            ["python", "pipeline.py", "--model_type", model_type],
+            ["python", "pipeline.py", "--model_name", model_name],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,

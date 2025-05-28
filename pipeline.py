@@ -24,27 +24,28 @@ def set_seed(seed=42):
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
 sys.path.append(PROJECT_ROOT)
 
-def training(model_type="lstm", tuner="ga", datasets=None):
+def training(model_name="Stacked-LSTM", tuner="ga", datasets=None):
     set_seed(42)
     """
     Run the full MLOps pipeline: data loading, training, and validation.
     Args:
-        model_type (str): 'lstm' or 'bilstm' to specify the model type.
+        model_name (str): 'Stacked-LSTM', 'Stacked-LSTM' or 'Padding' to specify the model type.
         tuner (str): Hyperparameter tuning method (e.g., 'ga').
         datasets (dict): Dictionary of datasets for training and validation.
     """
     if datasets is None:
         raise ValueError("No datasets provided for online validation.")
 
-    model_name = ModelFactory.get_model_name(model_type)
+    model_name = ModelFactory.get_model_name(model_name)
     mlflow.set_experiment(model_name)
     if mlflow.active_run() is not None:
         mlflow.end_run()
 
     with mlflow.start_run(run_name=f"{model_name}"):
-        if model_type.lower() == "padding":
+        if model_name == "Padding":
             # Training PaddingModule độc lập
             ModelFactory.train_padding_module(
+                model_name=model_name,
                 datasets=datasets,
                 input_dim=None,  # Sẽ tự động lấy từ dữ liệu
                 time_step=40,
@@ -56,14 +57,14 @@ def training(model_type="lstm", tuner="ga", datasets=None):
         else:
             print("Running Online Validation and Selecting Bellwether...")
             bellwether_dataset, all_datasets, bellwether_model_uri = ModelFactory.run_online_validation(
-                model_type=model_type,
+                model_name=model_name,
                 tuner=tuner,
                 datasets=datasets
             )
 
             print("\nRunning Cross-Project Validation with Selected Bellwether...")
             ModelFactory.run_cross_project_validation(
-                model_type=model_type,
+                model_name=model_name,
                 bellwether_dataset=bellwether_dataset,
                 all_datasets=all_datasets,
                 bellwether_model_uri=bellwether_model_uri,
@@ -72,8 +73,8 @@ def training(model_type="lstm", tuner="ga", datasets=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the CI build failure prediction pipeline.")
-    parser.add_argument("--model_type", type=str, default="lstm", choices=["lstm", "bilstm", "padding"],
-                        help="Model type to use: 'lstm', 'bilstm', or 'padding'.")
+    parser.add_argument("--model_name", type=str, default="Stacked-LSTM", choices=["Stacked-LSTM", "Stacked-BiLSTM", "Padding"],
+                        help="Model type to use: 'Stacked-LSTM', 'Stacked-BiLSTM', or 'Padding'.")
     args = parser.parse_args()
 
     load_dotenv()
@@ -84,4 +85,4 @@ if __name__ == "__main__":
         # file_list=["getsentry_sentry.csv"],
         dagshub_token=os.getenv("DAGSHUB_TOKEN"),
     )
-    training(model_type=args.model_type, datasets=datasets)
+    training(model_name=args.model_name, datasets=datasets)

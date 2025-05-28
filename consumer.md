@@ -76,19 +76,19 @@ channel.queue_purge(queue=queue_name)
 def callback(ch, method, properties, body):
     print("Received message...")
     try:
-        # Phân tích message JSON để lấy model_type
+        # Phân tích message JSON để lấy model_name
         message = json.loads(body.decode())
-        model_type = message.get("model_type", "lstm")  # Mặc định là 'lstm' nếu không có model_type
-        if model_type not in ["lstm", "bilstm", "padding"]:
-            raise ValueError(f"Invalid model_type: {model_type}. Must be 'lstm', 'bilstm', or 'padding'.")
+        model_name = message.get("model_name", "Padding")  # Mặc định là 'lstm' nếu không có model_name
+        if model_name not in ["Stacked-LSTM", "Stacked-BiLSTM", "Padding"]:
+            raise ValueError(f"Invalid model_name: {model_name}. Must be 'Stacked-LSTM', 'Stacked-BiLSTM', or 'Padding'.")
 
-        print(f"Running training container with model_type={model_type}...")
-        # Chạy container Docker với tham số model_type
+        print(f"Running training container with model_name={model_name}...")
+        # Chạy container Docker với tham số model_name
         docker_command = [
             "docker", "run", "--rm",
             "-v", f"{repo_dir}:/app",
             "ci-build-failure-prediction",
-            "python", "pipeline.py", "--model_type", model_type
+            "python", "pipeline.py", "--model_name", model_name
         ]
         process = subprocess.Popen(
             docker_command,
