@@ -10,6 +10,10 @@ import argparse
 from dotenv import load_dotenv
 from src.data.processing import get_dataset
 from src.model.common.model_factory import ModelFactory
+import dagshub
+# dagshub.init(repo_owner='hoaiphuongdg26', repo_name='CI-build-failure-prediction-inference', mlflow=True)
+# mlflow.set_tracking_uri(os.getenv("MLFLOW_S3_ENDPOINT_URL"))
+model_names = ["Stacked-LSTM", "Stacked-BiLSTM", "ConvLSTM", "Padding"]
 
 def set_seed(seed=42):
     os.environ["PYTHONHASHSEED"] = str(seed)
@@ -47,7 +51,7 @@ def training(model_name="Stacked-LSTM", tuner="ga", datasets=None):
             ModelFactory.train_padding_module(
                 model_name=model_name,
                 datasets=datasets,
-                input_dim=None,  # Sẽ tự động lấy từ dữ liệu
+                input_dim=None,
                 time_step=40,
                 epochs=20,
                 batch_size=32,
@@ -73,8 +77,8 @@ def training(model_name="Stacked-LSTM", tuner="ga", datasets=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the CI build failure prediction pipeline.")
-    parser.add_argument("--model_name", type=str, default="Stacked-LSTM", choices=["Stacked-LSTM", "Stacked-BiLSTM", "Padding"],
-                        help="Model type to use: 'Stacked-LSTM', 'Stacked-BiLSTM', or 'Padding'.")
+    parser.add_argument("--model_name", type=str, default="Stacked-LSTM", choices=model_names,
+                        help=f"Model type to use: {model_names}.")
     args = parser.parse_args()
 
     load_dotenv()

@@ -1,18 +1,22 @@
+# src/model/common/model_factory.py
 import os
-
 from src.model.common.padding_module import PaddingModule
+from src.model.common.preprocess import train_preprocess as train_preprocess, prepare_features
+from src.model.common.preprocess import test_preprocess
+from src.model.common.preprocess import convlstm_test_preprocess
+from src.model.common.preprocess import convlstm_train_preprocess
 from src.model.lstm.model import construct_lstm_model
-from src.model.common.preprocess import train_preprocess as lstm_train_preprocess, prepare_features
-from src.model.common.preprocess import test_preprocess as lstm_test_preprocess
 from src.model.lstm.tuners import evaluate_tuner as lstm_evaluate_tuner
 from src.model.lstm.validation import run_online_validation as lstm_run_online_validation
 from src.model.lstm.validation import run_cross_project_validation as lstm_run_cross_project_validation
 from src.model.bilstm.model import construct_bilstm_model
-from src.model.common.preprocess import train_preprocess as bilstm_train_preprocess
-from src.model.common.preprocess import test_preprocess as bilstm_test_preprocess
 from src.model.bilstm.tuners import evaluate_tuner as bilstm_evaluate_tuner
 from src.model.bilstm.validation import run_online_validation as bilstm_run_online_validation
 from src.model.bilstm.validation import run_cross_project_validation as bilstm_run_cross_project_validation
+from src.model.conv_lstm.model import construct_convlstm_model
+from src.model.conv_lstm.tuners import evaluate_tuner as convlstm_evaluate_tuner
+from src.model.conv_lstm.validation import run_online_validation as convlstm_run_online_validation
+from src.model.conv_lstm.validation import run_cross_project_validation as convlstm_run_cross_project_validation
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 MODEL_DIR = os.path.join(PROJECT_ROOT, "models")
@@ -20,7 +24,7 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 
 
 class ModelFactory:
-    """Factory class to create and manage LSTM or BiLSTM models."""
+    """Factory class to create and manage LSTM, BiLSTM, or ConvLSTM models."""
 
     @staticmethod
     def get_model_functions(model_name):
@@ -28,8 +32,8 @@ class ModelFactory:
         if model_name == "Stacked-LSTM":
             return {
                 "construct_model": construct_lstm_model,
-                "train_preprocess": lstm_train_preprocess,
-                "test_preprocess": lstm_test_preprocess,
+                "train_preprocess": train_preprocess,
+                "test_preprocess": test_preprocess,
                 "evaluate_tuner": lstm_evaluate_tuner,
                 "run_online_validation": lstm_run_online_validation,
                 "run_cross_project_validation": lstm_run_cross_project_validation,
@@ -38,11 +42,21 @@ class ModelFactory:
         elif model_name == "Stacked-BiLSTM":
             return {
                 "construct_model": construct_bilstm_model,
-                "train_preprocess": bilstm_train_preprocess,
-                "test_preprocess": bilstm_test_preprocess,
+                "train_preprocess": train_preprocess,
+                "test_preprocess": test_preprocess,
                 "evaluate_tuner": bilstm_evaluate_tuner,
                 "run_online_validation": bilstm_run_online_validation,
                 "run_cross_project_validation": bilstm_run_cross_project_validation,
+                "model_name": model_name
+            }
+        elif model_name == "ConvLSTM":
+            return {
+                "construct_model": construct_convlstm_model,
+                "train_preprocess": convlstm_train_preprocess,
+                "test_preprocess": convlstm_test_preprocess,
+                "evaluate_tuner": convlstm_evaluate_tuner,
+                "run_online_validation": convlstm_run_online_validation,
+                "run_cross_project_validation": convlstm_run_cross_project_validation,
                 "model_name": model_name
             }
         elif model_name == "Padding":
@@ -57,7 +71,7 @@ class ModelFactory:
                 "train_padding_module": ModelFactory.train_padding_module
             }
         else:
-            raise ValueError(f"Unsupported model_name: {model_name}. Choose 'Stacked-LSTM', 'Stacked-LSTM', or 'Padding'.")
+            raise ValueError(f"Unsupported model_name: {model_name}. Choose 'Stacked-LSTM', 'Stacked-BiLSTM', 'ConvLSTM', or 'Padding'.")
 
     @staticmethod
     def construct_model(model_name, network_params, train_set, pretrained_model_path=None):

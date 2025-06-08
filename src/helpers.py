@@ -1,3 +1,4 @@
+# helpers.py
 import mlflow
 from sklearn.metrics import f1_score, roc_auc_score, accuracy_score, precision_score, recall_score, roc_curve, \
     average_precision_score, precision_recall_curve
@@ -5,6 +6,8 @@ import numpy as np
 import pandas as pd
 import warnings
 import os
+# from pipeline import PROJECT_ROOT
+
 
 class Utils:
     # Move CONFIG to utils for now (can be moved to config.py later)
@@ -132,6 +135,41 @@ class Utils:
                 raise ValueError("Threshold must be provided for inference when y_true is not available.")
             y_pred = Utils.to_labels(y_pred_probs, threshold)
             return y_pred, y_pred_probs
+
+    @staticmethod
+    def predict_convlstm(model, X, y_true):
+        """
+        Predict using ConvLSTM model and compute metrics.
+
+        Args:
+            model: Trained Keras model.
+            X (np.ndarray): Input data of shape [samples, time_steps, rows, cols, channels].
+            y_true (np.ndarray): True labels (1D array).
+
+        Returns:
+            tuple: (metrics_dict, best_threshold)
+        """
+        from sklearn.metrics import precision_recall_curve, auc, roc_auc_score, f1_score, precision_score, recall_score
+        y_pred_probs = model.predict(X, verbose=0)
+        # Ensure y_pred_probs is 1D
+        if y_pred_probs.ndim > 1:
+            y_pred_probs = y_pred_probs.ravel()
+        precisions, recalls, thresholds = precision_recall_curve(y_true, y_pred_probs)
+        f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-10)
+        best_idx = np.argmax(f1_scores)
+        best_threshold = thresholds[best_idx]
+        y_pred = (y_pred_probs >= best_threshold).astype(int)
+        metrics = {
+            "AUC": roc_auc_score(y_true, y_pred_probs),
+            "accuracy": accuracy_score(y_true, y_pred),
+            "PR_AUC": auc(recalls, precisions),
+            "precision": precision_score(y_true, y_pred),
+            "recall": recall_score(y_true, y_pred),
+            "F1": f1_score(y_true, y_pred)
+        }
+        print(f"Best threshold (max F1): {best_threshold:.4f}, F1-score: {metrics['F1']:.4f}, "
+              f"Precision: {metrics['precision']:.4f}, Recall: {metrics['recall']:.4f}")
+        return metrics, best_threshold
 
     @staticmethod
     def is_int(n):
@@ -277,3 +315,21 @@ class Utils:
             flat_metrics = {f"{prefix}{k}": v for k, v in flat_metrics.items()}
 
         return flat_params, flat_metrics
+
+    # @staticmethod
+    # def load_datasets_from_branches():
+    #     """Load datasets from all branch folders under data/processed."""
+    #     data_dir = os.path.join(PROJECT_ROOT, "data", "processed")
+    #     datasets = {}
+    #     for branch in os.listdir(data_dir):
+    #         branch_path = os.path.join(data_dir, branch)
+    #         if os.path.isdir(branch_path):
+    #             for file_name in os.listdir(branch_path):
+    #                 if file_name.endswith('.csv'):
+    #                     file_path = os.path.join(branch_path, file_name)
+    #                     key = f"{branch}/{file_name}"
+    #                     try:
+    #                         datasets[key] = pd.read_csv(file_path)
+    #                     except Exception as e:
+    #                         print(f"Error loading {key}: {e}")
+    #     return datasets
