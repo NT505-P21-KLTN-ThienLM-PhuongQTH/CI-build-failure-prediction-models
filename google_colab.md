@@ -18,6 +18,7 @@ else:
     print("Warning: .env file not found in Google Drive.")
 
 load_dotenv('/content/.env')
+os.makedirs('/content/cache', exist_ok=True)
 
 # Lấy thông tin từ .env
 git_user = os.getenv("GITHUB_USER")

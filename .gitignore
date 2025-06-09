@@ -40,3 +40,5 @@ data/processed/*
 /.github/
 /.python-version
 /data/processed-local.dvc
+
+cache/*

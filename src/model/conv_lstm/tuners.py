@@ -63,7 +63,7 @@ def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None):
         'drop_proba': list(np.linspace(0.01, 0.21, 20)),
         'nb_filters': [32, 64],
         'nb_epochs': [4, 5, 6],
-        'nb_batch': [4, 8, 16, 32, 64],
+        'nb_batch': [16, 32, 64],
         'nb_layers': [1, 2, 3, 4],
         'optimizer': ['adam', 'rmsprop'],
         'time_step': list(range(20, 40))

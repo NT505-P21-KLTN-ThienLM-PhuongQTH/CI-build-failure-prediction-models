@@ -17,6 +17,17 @@ class Utils:
         'WITH_SMOTE': True,
     }
 
+    FEATURE_GROUPS = {
+    'project': ['gh_sloc', 'gh_test_cases_per_kloc', 'proj_fail_rate_history', 'proj_fail_rate_recent'],
+    'code_change': ['git_diff_src_churn', 'git_diff_test_churn', 'gh_diff_files_added', 'gh_diff_files_deleted',
+                    'gh_diff_tests_added', 'gh_diff_src_files', 'gh_diff_doc_files', 'num_files_edited'],
+    'team': ['gh_team_size', 'gh_num_issue_comments', 'gh_num_pr_comments', 'gh_num_commit_comments',
+             'same_committer', 'num_distinct_authors', 'comm_avg_experience', 'comm_fail_rate_history',
+             'comm_fail_rate_recent'],
+    'time': ['year_of_start', 'month_of_start', 'day_of_start', 'day_week', 'tr_duration', 'prev_build_result'],
+    'config_pr': ['gh_is_pr', 'no_config_edited']
+}
+
     @staticmethod
     def get_dataset(file_name, dataset_dir="../data/processed"):
         # Load dataset

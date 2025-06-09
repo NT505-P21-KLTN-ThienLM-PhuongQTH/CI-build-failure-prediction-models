@@ -33,7 +33,7 @@ def run_online_validation(tuner="ga", datasets=None):
         for file_name, dataset in datasets.items():
             best_score = float('-inf')
             best_model_info = None
-            train_sets, test_sets = Utils.online_validation_folds(dataset)
+            train_sets, test_sets = Utils.online_validation_folds(dataset=dataset, n_folds=5)
             balanced_train_sets = []
 
             for fold_idx, (train_set, test_set) in enumerate(zip(train_sets, test_sets)):
