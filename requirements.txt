@@ -21,3 +21,4 @@ dvc
 dagshub
 pyngrok
 nest_asyncio
+pika

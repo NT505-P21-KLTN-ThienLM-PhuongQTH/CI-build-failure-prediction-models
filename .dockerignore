@@ -1,3 +1,4 @@
+.github/
 notebooks/
 scripts/
 .gitignore
@@ -6,5 +7,5 @@ docker-compose.yml
 tests
 .env.sample
 google_colab.md
+pipeline.py
 README.md
-consumer.md

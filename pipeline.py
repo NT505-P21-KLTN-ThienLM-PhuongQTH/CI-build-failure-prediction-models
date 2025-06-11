@@ -33,7 +33,7 @@ def training(model_name="Stacked-LSTM", tuner="ga", datasets=None):
     """
     Run the full MLOps pipeline: data loading, training, and validation.
     Args:
-        model_name (str): 'Stacked-LSTM', 'Stacked-LSTM' or 'Padding' to specify the model type.
+        model_name (str): 'Stacked-LSTM', 'Stacked-BiLSTM', 'ConvLSTM', or 'Padding' to specify the model type.
         tuner (str): Hyperparameter tuning method (e.g., 'ga').
         datasets (dict): Dictionary of datasets for training and validation.
     """
