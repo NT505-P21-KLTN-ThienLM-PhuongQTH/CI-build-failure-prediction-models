@@ -1,4 +1,6 @@
 .github/
+cache/
+data/
 notebooks/
 scripts/
 .gitignore

@@ -11,9 +11,13 @@ from src.data.processing import get_dataset
 from src.model.common.model_factory import ModelFactory
 import pika
 import json
+import logging
+import dagshub
 
-# dagshub.init(repo_owner='hoaiphuongdg26', repo_name='CI-build-failure-prediction-inference', mlflow=True)
-# mlflow.set_tracking_uri(os.getenv("MLFLOW_S3_ENDPOINT_URL"))
+# Thiết lập logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 model_names = ["Stacked-LSTM", "Stacked-BiLSTM", "ConvLSTM", "Padding"]
 
 def set_seed(seed=42):
@@ -55,6 +59,9 @@ def training(model_name="Stacked-LSTM", tuner="ga", datasets=None):
     if datasets is None:
         raise ValueError("No datasets provided for online validation.")
 
+    if model_name not in model_names:
+        raise ValueError(f"Invalid model_name: {model_name}. Must be one of {model_names}")
+
     model_name = ModelFactory.get_model_name(model_name)
     mlflow.set_experiment(model_name)
     if mlflow.active_run() is not None:
@@ -62,7 +69,7 @@ def training(model_name="Stacked-LSTM", tuner="ga", datasets=None):
 
     with mlflow.start_run(run_name=f"{model_name}"):
         if model_name == "Padding":
-            # Training PaddingModule độc lập
+            logger.info(f"Training PaddingModule for {model_name}")
             ModelFactory.train_padding_module(
                 model_name=model_name,
                 datasets=datasets,
@@ -74,14 +81,14 @@ def training(model_name="Stacked-LSTM", tuner="ga", datasets=None):
                 max_iterations=5
             )
         else:
-            print("Running Online Validation and Selecting Bellwether...")
+            logger.info(f"Running Online Validation for {model_name}")
             bellwether_dataset, all_datasets, bellwether_model_uri = ModelFactory.run_online_validation(
                 model_name=model_name,
                 tuner=tuner,
                 datasets=datasets
             )
 
-            print("\nRunning Cross-Project Validation with Selected Bellwether...")
+            logger.info(f"Running Cross-Project Validation for {model_name}")
             ModelFactory.run_cross_project_validation(
                 model_name=model_name,
                 bellwether_dataset=bellwether_dataset,
@@ -94,6 +101,7 @@ def produce_training_jobs():
     """Gửi các job đào tạo vào queue CloudAMQP"""
     connection = get_cloudamqp_connection()
     channel = connection.channel()
+    channel.queue_delete(queue='training_queue')
     channel.queue_declare(queue='training_queue', durable=True)
 
     for model_name in model_names:
@@ -104,18 +112,26 @@ def produce_training_jobs():
             body=json.dumps(job),
             properties=pika.BasicProperties(delivery_mode=2)
         )
-        print(f"Sent training job for {model_name} to queue")
+        logger.info(f"Sent training job for {model_name} to queue")
     connection.close()
 
 def consume_training_jobs():
     """Lấy job từ queue và chạy training"""
     load_dotenv()
+    repo_url = os.getenv("DAGSHUB_REPO")
+    data_path = os.getenv("DAGSHUB_DATA_PATH")
+    branch = os.getenv("DAGSHUB_BRANCH")
+    token = os.getenv("DAGSHUB_TOKEN")
+
+    if token:
+        dagshub.auth.add_app_token(token)
+        os.environ['DAGSHUB_USER_TOKEN'] = token
+
     datasets = get_dataset(
-        repo_url=os.getenv("DAGSHUB_REPO"),
-        data_path=os.getenv("DAGSHUB_DATA_PATH"),
-        rev=os.getenv("DAGSHUB_BRANCH"),
-        # file_list=["getsentry_sentry.csv"],
-        dagshub_token=os.getenv("DAGSHUB_TOKEN"),
+        repo_url=repo_url,
+        data_path=data_path,
+        rev=branch,
+        dagshub_token=token,
     )
 
     connection = get_cloudamqp_connection()
@@ -123,20 +139,28 @@ def consume_training_jobs():
     channel.queue_declare(queue='training_queue', durable=True)
 
     def callback(ch, method, properties, body):
-        job = json.loads(body)
-        model_name = job["model_name"]
-        tuner = job["tuner"]
-        print(f"Processing training job for {model_name}...")
         try:
-            training(model_name=model_name, tuner=tuner, datasets=datasets)
-            ch.basic_ack(delivery_tag=method.delivery_tag)
-        except Exception as e:
-            print(f"Error processing {model_name}: {e}")
-            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+            job = json.loads(body)
+            if not isinstance(job, dict) or "model_name" not in job:
+                logger.error(f"Invalid job format: {body.decode()}")
+                ch.basic_nack(delivery_tag=method.job_id, requeue=False)
+                return
 
-    channel.basic_qos(prefetch_count=1)  # Xử lý từng job một
+            model_name = job["model_name"]
+            tuner = job.get("tuner", "ga")
+            logger.info(f"Processing training job for {model_name} with tuner: {tuner}")
+            training(model_name=model_name, tuner=tuner, datasets=datasets)
+            ch.basic_ack(delivery_tag=method.job_id)
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON: {body.decode()} - Error: {e}")
+            ch.basic_nack(delivery_tag=method.job_id, requeue=False)
+        except Exception as e:
+            logger.error(f"Error processing job for {model_name}: {e}", exc_info=True)
+            ch.basic_nack(delivery_tag=method.job_id, requeue=False)
+
+    channel.basic_qos(prefetch_count=1)
     channel.basic_consume(queue='training_queue', on_message_callback=callback)
-    print("Worker started, waiting for training jobs...")
+    logger.info("Worker started, waiting for training jobs...")
     channel.start_consuming()
 
 if __name__ == "__main__":

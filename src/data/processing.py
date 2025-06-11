@@ -101,6 +101,7 @@ def get_dataset(repo_url, data_path, rev="main", file_list=None, dagshub_token=N
     Load and validate datasets from a DagsHub repo via DagsHubFilesystem (no local sync).
 
     Args:
+        dagshub_token:
         repo_url (str): URL of the DagsHub repo (e.g., https://dagshub.com/user/project).
         data_path (str): Path inside the repo where preprocessed data is stored (e.g., "data/processed-local").
         rev (str): Git revision (branch, tag, or commit hash). Default is "main".
