@@ -8,6 +8,7 @@ import json
 from dotenv import load_dotenv
 from google.colab import drive
 from dagshub.streaming import DagsHubFilesystem
+import dagshub
 
 # Mount Google Drive
 drive.mount('/content/drive')
@@ -30,10 +31,14 @@ rabbitmq_vhost = os.getenv("RABBITMQ_VHOST")
 repo_url = os.getenv("DAGSHUB_REPO")
 data_path = os.getenv("DAGSHUB_DATA_PATH")
 rev = os.getenv("DAGSHUB_BRANCH")
+dagshub_token = os.getenv("DAGSHUB_TOKEN")
 
 # Connect to Dagshub
+if dagshub_token:
+    dagshub.auth.add_app_token(dagshub_token)
+    os.environ['DAGSHUB_USER_TOKEN'] = dagshub_token
 try:
-    fs = DagsHubFilesystem(".", repo_url=repo_url, branch=rev)
+    fs = DagsHubFilesystem(".", repo_url=repo_url, branch=rev, token=dagshub_token)
 except Exception as e:
     print("Error:", str(e))
 
@@ -42,6 +47,7 @@ repo_dir = "/content/CI-build-failure-prediction-models"
 if not os.path.exists(repo_dir):
     !git clone https://{git_user}:{git_token}@github.com/NT505-P21-KLTN-ThienLM-PhuongQTH/CI-build-failure-prediction-models.git {repo_dir}
 %cd {repo_dir}
+!git fetch
 !git pull origin main
 
 # Cài đặt requirements
@@ -80,7 +86,7 @@ def callback(ch, method, properties, body):
         # Phân tích message JSON để lấy model_name
         message = json.loads(body.decode())
         model_name = message.get("model_name", "Padding")
-        if model_name not in ["Stacked-LSTM", "Stacked-BiLSTM", "Padding"]:
+        if model_name not in ["Stacked-LSTM", "Stacked-BiLSTM", "Padding", "ConvLSTM"]:
             raise ValueError(f"Invalid model_name: {model_name}. Must be 'Stacked-LSTM', 'Stacked-BiLSTM', or 'Padding'.")
 
         print(f"Running pipeline.py with model_name={model_name}...")
