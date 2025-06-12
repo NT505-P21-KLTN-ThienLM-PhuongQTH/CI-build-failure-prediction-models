@@ -1,4 +1,4 @@
-FROM python:3.9-slim
+FROM python:3.9-slim AS builder
 
 WORKDIR /app
 
@@ -11,12 +11,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --upgrade pip
+RUN pip install --no-cache-dir --upgrade pip wheel
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip wheel --no-cache-dir --wheel-dir=/app/wheels -r requirements.txt
 
-COPY . .
+FROM python:3.9-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libffi-dev \
+    libssl-dev \
+    libgl1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/wheels /app/wheels
+RUN pip install --no-cache-dir /app/wheels/* && rm -rf /app/wheels
+
+# Copy mã nguồn và .env
 COPY .env .
+COPY . .
 
 CMD ["python", "consumer.py", "--mode", "consume"]
