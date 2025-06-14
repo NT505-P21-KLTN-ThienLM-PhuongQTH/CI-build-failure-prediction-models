@@ -29,8 +29,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /app/wheels /app/wheels
 RUN pip install --no-cache-dir /app/wheels/* && rm -rf /app/wheels
 
-# Copy mã nguồn và .env
-COPY .env .
 COPY . .
 
 CMD ["python", "consumer.py", "--mode", "consume"]
