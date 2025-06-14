@@ -1,4 +1,4 @@
-# src/model/stacked_lstm/validation.py
+# src/model/lstm/validation.py
 import os
 import random
 import pandas as pd
@@ -9,11 +9,9 @@ from src.model.common.preprocess import test_preprocess, apply_smote, prepare_fe
 from src.model.lstm.tuners import evaluate_tuner, CONFIG
 from src.helpers import Utils
 
-# Define project root and centralize directories
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 MLRUNS_DIR = os.path.join(PROJECT_ROOT, "mlruns")
 MODEL_DIR = os.path.join(PROJECT_ROOT, "models", "stacked_lstm")
-
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 COLUMNS_RES = ["proj", "algo", "iter", "AUC", "accuracy", "F1", "exp"]
@@ -26,7 +24,6 @@ def run_online_validation(tuner="ga", datasets=None):
     all_test_entries = []
 
     with mlflow.start_run(run_name="Online_Validation_Main", nested=True):
-        # Select top 10 largest datasets
         dataset_sizes = {file_name: len(df) for file_name, df in datasets.items()}
         top_10_files = sorted(dataset_sizes.items(), key=lambda x: x[1], reverse=True)[:10]
         top_10_files = [f for f, _ in top_10_files]
@@ -37,31 +34,40 @@ def run_online_validation(tuner="ga", datasets=None):
         for file_name, dataset in datasets.items():
             best_score = float('-inf')
             best_model_info = None
-            train_sets, test_sets = Utils.online_validation_folds(dataset)
+            train_sets, val_sets, test_sets = Utils.online_validation_folds(dataset)
+
+            if not train_sets or not val_sets or not test_sets:
+                print(f"Skipping project {file_name} due to insufficient data.")
+                continue
+
             balanced_train_sets = []
 
-            for fold_idx, (train_set, test_set) in enumerate(zip(train_sets, test_sets)):
+            for fold_idx, (train_set, val_set, test_set) in enumerate(zip(train_sets, val_sets, test_sets)):
+                if len(test_set) == 0 or len(val_set) == 0 or len(train_set) == 0:
+                    print(f"Fold {fold_idx + 1} for {file_name} skipped due to empty set.")
+                    continue
+
                 for iteration in range(1, CONFIG['NBR_REP'] + 1):
                     print(f"\n[Proj {file_name} | Fold {fold_idx + 1} | Iter {iteration}] Training...")
-                    entry_train = evaluate_tuner(tuner, train_set, pretrained_model_path=None)
+                    entry_train = evaluate_tuner(tuner, train_set, val_set, pretrained_model_path=None)
                     current_model = entry_train["model"]
                     current_params = entry_train["params"]
                     current_history = entry_train.get("history")
                     current_metrics = entry_train["entry"]
 
-                    # Prepare balanced data with SMOTE
                     X_train, y = prepare_features(train_set, target_column='build_failed')
-                    feature_cols = X_train.columns.tolist()
                     X_smote, y_smote = apply_smote(X_train.values, y.values)
-                    balanced_df = pd.DataFrame(X_smote, columns=feature_cols)
+                    balanced_df = pd.DataFrame(X_smote, columns=X_train.columns)
                     balanced_df['build_failed'] = y_smote
 
                     if iteration == 1:
                         balanced_train_sets.append(balanced_df)
 
                     X_test, y_test = test_preprocess(train_set, test_set, current_params["time_step"])
+                    if X_test.shape[0] == 0 or y_test.shape[0] == 0:
+                        print(f"Test set for fold {fold_idx + 1} is empty, skipping iteration {iteration}.")
+                        continue
 
-                    # Predict and evaluate
                     entry_test, threshold = Utils.predict_lstm(current_model, X_test, y_test)
                     entry_test.update({
                         "iter": iteration,
@@ -91,7 +97,6 @@ def run_online_validation(tuner="ga", datasets=None):
                 print(f"Warning: No valid model found for {file_name}. Skipping MLflow logging...")
                 continue
 
-            # Log best model for each project
             with mlflow.start_run(run_name=f"{file_name}_best_model", nested=True):
                 log_params, log_metrics = Utils.build_log_entries(
                     params=best_model_info["params"],
@@ -103,7 +108,10 @@ def run_online_validation(tuner="ga", datasets=None):
 
                 best_models[file_name] = best_model_info
 
-        # Calculate average metrics and select bellwether
+        if not best_models:
+            print("No valid models found for any project. Aborting validation.")
+            return None, None, None
+
         test_df = pd.DataFrame(all_test_entries)
         proj_scores = test_df.groupby('proj')[['F1', 'AUC', 'accuracy']].mean()
         print("\nAverage Test Metrics by Project:")
@@ -112,7 +120,6 @@ def run_online_validation(tuner="ga", datasets=None):
         print(f"\nSelected Bellwether: {bellwether} (Best F1: {proj_scores.loc[bellwether, 'F1']:.4f})")
         bellwether_info = best_models[bellwether]
 
-        # Log bellwether model under main run
         sanitized_bellwether = bellwether.replace('/', '_').replace('\\', '_')
         model_name = f"bellwether_model_{sanitized_bellwether}"
         mlflow.keras.log_model(bellwether_info["model"], artifact_path=model_name)
@@ -127,28 +134,30 @@ def run_online_validation(tuner="ga", datasets=None):
 
         return datasets[bellwether], datasets, bellwether_model_uri
 
-
 def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_model_uri=None, tuner="ga"):
     all_train_entries = []
     all_test_entries = []
     bellwether_model_paths = []
 
     with mlflow.start_run(run_name="Cross_Project_Validation_Main", nested=True):
-        # Phase 1: Train Bellwether Model
         best_bellwether_info = None
         best_bellwether_score = float('-inf')
 
         with mlflow.start_run(run_name="Bellwether_Train", nested=True):
+            train_sets, val_sets, _ = Utils.online_validation_folds(bellwether_dataset)
+            if not train_sets or not val_sets:
+                print(f"Skipping Bellwether training due to insufficient data in {bellwether_dataset}.")
+                return
+
             for iteration in range(1, CONFIG['NBR_REP'] + 1):
                 print(f"[Cross-Project | Iter {iteration}] Training on Bellwether...")
                 with mlflow.start_run(run_name=f"training_iter_{iteration}", nested=True):
-                    entry_train = evaluate_tuner(tuner, bellwether_dataset, bellwether_model_uri)
+                    entry_train = evaluate_tuner(tuner, train_sets[0], val_sets[0], bellwether_model_uri)
                     current_model = entry_train["model"]
                     current_params = entry_train["params"]
                     current_metrics = entry_train["entry"]
                     print(f"$$$ entry_train = {entry_train}")
 
-                    # Log training metrics
                     score = Utils.calculate_weighted_score(current_metrics)
                     log_params, log_metrics = Utils.build_log_entries(
                         params={**current_params, "project": "bellwether", "iteration": iteration},
@@ -157,7 +166,6 @@ def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_mo
                     )
                     Utils.log_mlflow(params=log_params, metrics=log_metrics)
 
-                    # Update best bellwether model
                     if score > best_bellwether_score:
                         best_bellwether_score = score
                         best_bellwether_info = {
@@ -168,7 +176,6 @@ def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_mo
                             "iteration": iteration,
                         }
 
-            # Save only the best Bellwether model
             if best_bellwether_info is not None:
                 model_name = f"{best_bellwether_info['model_name']}"
                 mlflow.keras.log_model(best_bellwether_info["model"], artifact_path=model_name)
@@ -179,10 +186,8 @@ def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_mo
                     prefix="best_bellwether_"
                 )
                 Utils.log_mlflow(params=log_params, metrics=log_metrics)
-                bellwether_model_paths = [
-                    (model_path, best_bellwether_info["params"], best_bellwether_info["metrics"])]
+                bellwether_model_paths = [(model_path, best_bellwether_info["params"], best_bellwether_info["metrics"])]
 
-        # Phase 2: Fine-Tune and Test on Other Projects
         best_cross_project_info = None
         best_cross_project_score = float('-inf')
 
@@ -192,19 +197,24 @@ def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_mo
                     if test_set is not bellwether_dataset:
                         print(f"Testing on {file_name} with Transfer Learning...")
                         with mlflow.start_run(run_name=f"fine_tune_{file_name}_iter{iteration}", nested=True):
-                            # Fine-tune the model
+                            train_sets, val_sets, test_sets = Utils.online_validation_folds(test_set)
+                            if not train_sets or not val_sets or not test_sets:
+                                print(f"Skipping {file_name} due to insufficient data.")
+                                continue
+
                             fine_tune_params = params.copy()
                             fine_tune_params["nb_epochs"] = 5
-                            print (f"$$$ fine_tune_params: {fine_tune_params}")
-                            entry_fine_tune = construct_lstm_model(fine_tune_params, test_set,
+                            print(f"$$$ fine_tune_params: {fine_tune_params}")
+                            entry_fine_tune = construct_lstm_model(fine_tune_params, train_sets[0], val_sets[0],
                                                                    pretrained_model_path=model_path)
                             print(f"$$$ entry_fine_tune = {entry_fine_tune}")
                             fine_tuned_model = entry_fine_tune["model"]
 
-                            # Preprocess test data
-                            X_test, y_test = test_preprocess(bellwether_dataset, test_set, params["time_step"])
+                            X_test, y_test = test_preprocess(train_sets[0], test_sets[0], params["time_step"])
+                            if X_test.shape[0] == 0 or y_test.shape[0] == 0:
+                                print(f"Test set for {file_name} is empty, skipping.")
+                                continue
 
-                            # Predict and evaluate
                             entry_test, threshold = Utils.predict_lstm(fine_tuned_model, X_test, y_test)
                             entry_test.update({
                                 "iter": iteration,
@@ -214,7 +224,6 @@ def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_mo
                             })
                             score = Utils.calculate_weighted_score(entry_test)
 
-                            # Log fine-tuned model metrics
                             log_params, log_metrics = Utils.build_log_entries(
                                 params={**fine_tune_params, "threshold": threshold, "project": file_name,
                                         "iteration": iteration, "time_step": params["time_step"],
@@ -226,7 +235,6 @@ def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_mo
                             print(f"Test metrics for {file_name}: {entry_test}")
                             all_test_entries.append(entry_test)
 
-                            # Update best cross-project model
                             if score > best_cross_project_score:
                                 best_cross_project_score = score
                                 best_cross_project_info = {
@@ -247,7 +255,6 @@ def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_mo
                                     }
                                 }
 
-            # Log best cross-project model
             if best_cross_project_info is not None:
                 best_project = best_cross_project_info["params"]["project"]
                 best_iteration = best_cross_project_info["params"]["iteration"]

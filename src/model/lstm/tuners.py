@@ -17,23 +17,22 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 CONFIG = {'MAX_EVAL': 10, 'NBR_REP': 2}
 
 class LSTMWorker(Worker):
-    def __init__(self, train_set, **kwargs):
+    def __init__(self, train_set, val_set, **kwargs):
         super().__init__(**kwargs)
         self.train_set = train_set
+        self.val_set = val_set
 
     def compute(self, config, budget, **kwargs):
-        res = construct_lstm_model(config, self.train_set)
+        res = construct_lstm_model(config, self.train_set, self.val_set)
         return {'loss': res['validation_loss'], 'info': {}}
 
 def train_lstm_with_hyperopt(network_params):
-    # Train LSTM with hyperopt.
-    if 'data' not in globals():
-        raise ValueError("Global 'data' not set. Ensure evaluate_tuner sets it correctly.")
-    res = construct_lstm_model(network_params, globals()['data'])
+    if 'data' not in globals() or 'val_data' not in globals():
+        raise ValueError("Global 'data' or 'val_data' not set. Ensure evaluate_tuner sets it correctly.")
+    res = construct_lstm_model(network_params, globals()['data'], globals()['val_data'])
     return {'loss': res['validation_loss'], 'status': STATUS_OK}
 
 def convert_from_PSO(network_params):
-    # Convert PSO parameters to appropriate types.
     for key in network_params:
         if key == 'optimizer':
             network_params[key] = 'adam' if int(network_params[key]) == 1 else 'rmsprop'
@@ -42,7 +41,6 @@ def convert_from_PSO(network_params):
     return network_params
 
 def fn_lstm_pso(drop_proba=0.01, nb_units=32, nb_epochs=2, nb_batch=4, nb_layers=1, optimizer=1, time_step=30):
-    # Function for PSO optimization.
     optimizer = 'adam' if int(optimizer) == 1 else 'rmsprop'
     network_params = {
         'nb_units': int(nb_units),
@@ -53,23 +51,21 @@ def fn_lstm_pso(drop_proba=0.01, nb_units=32, nb_epochs=2, nb_batch=4, nb_layers
         'nb_batch': int(nb_batch),
         'drop_proba': drop_proba
     }
-    if 'data' not in globals():
-        raise ValueError("Global 'data' not set.")
-    res = construct_lstm_model(network_params, globals()['data'])
+    if 'data' not in globals() or 'val_data' not in globals():
+        raise ValueError("Global 'data' or 'val_data' not set.")
+    res = construct_lstm_model(network_params, globals()['data'], globals()['val_data'])
     return 1 - float(res["validation_loss"])
 
-def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None):
-    # Evaluate the specified tuner.
-    global data
+def evaluate_tuner(tuner_option, train_set, val_set, pretrained_model_path=None):
+    global data, val_data
     data = train_set
+    val_data = val_set
 
-    # mlflow.log_param("tuner", tuner_option)
-    # Define explicit parameter space for GA
     all_possible_params = {
         'drop_proba': list(np.linspace(0.01, 0.21, 20)),
         'nb_units': [32, 64],
         'nb_epochs': [4, 5, 6],
-        'nb_batch': [4, 8, 16, 32, 64],  # Power of 2
+        'nb_batch': [4, 8, 16, 32, 64],
         'nb_layers': [1, 2, 3, 4],
         'optimizer': ['adam', 'rmsprop'],
         'time_step': list(range(20, 40))
@@ -81,7 +77,7 @@ def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None):
     if tuner_option == "ga":
         ga_runner = GARunner()
         best_params, best_model, entry_train, history = ga_runner.generate(
-            all_possible_params, construct_lstm_model, data,
+            all_possible_params, construct_lstm_model, data, val_set,
             pretrained_model_path=pretrained_model_path
         )
 
@@ -91,14 +87,14 @@ def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None):
         best = fmin(train_lstm_with_hyperopt, param_space, algo=tpe.suggest, max_evals=CONFIG.get('MAX_EVAL'),
                     trials=trials)
         best_params = {k: all_possible_params[k][v] for k, v in best.items()}
-        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path)
+        res = construct_lstm_model(best_params, data, val_data, pretrained_model_path=pretrained_model_path)
         entry_train, best_model = res["entry"], res["model"]
 
     elif tuner_option == "pso":
         params_PSO = {
             'nb_units': [all_possible_params['nb_units'][0], all_possible_params['nb_units'][-1]],
             'nb_layers': [all_possible_params['nb_layers'][0], all_possible_params['nb_layers'][-1]],
-            'optimizer': [1, 2],  # 1: adam, 2: rmsprop
+            'optimizer': [1, 2],
             'time_step': [all_possible_params['time_step'][0], all_possible_params['time_step'][-1]],
             'nb_epochs': [all_possible_params['nb_epochs'][0], all_possible_params['nb_epochs'][-1]],
             'nb_batch': [all_possible_params['nb_batch'][0], all_possible_params['nb_batch'][-1]],
@@ -106,7 +102,7 @@ def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None):
         }
         best_params, _, _ = optunity.maximize_structured(fn_lstm_pso, params_PSO, num_evals=CONFIG.get('MAX_EVAL'))
         best_params = convert_from_PSO(best_params)
-        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path)
+        res = construct_lstm_model(best_params, data, val_data, pretrained_model_path=pretrained_model_path)
         entry_train, best_model = res["entry"], res["model"]
 
     elif tuner_option == "bohb":
@@ -122,14 +118,14 @@ def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None):
         import hpbandster.core.nameserver as hpns
         NS = hpns.NameServer(run_id="LSTM", host='127.0.0.1', port=None)
         NS.start()
-        w = LSTMWorker(train_set=data, nameserver='127.0.0.1', run_id="LSTM")
+        w = LSTMWorker(train_set=data, val_set=val_data, nameserver='127.0.0.1', run_id="LSTM")
         w.run(background=True)
         bohb = BOHB(configspace=config_space, run_id="LSTM", nameserver='127.0.0.1', min_budget=1,
                     max_budget=CONFIG.get('NBR_SOL'))
         res = bohb.run(n_iterations=CONFIG.get('NBR_GEN'))
         best = res.get_incumbent_id()
         best_params = res.get_id2config_mapping()[best]['config']
-        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path)
+        res = construct_lstm_model(best_params, data, val_data, pretrained_model_path=pretrained_model_path)
         entry_train, best_model = res["entry"], res["model"]
         bohb.shutdown(shutdown_workers=True)
         NS.shutdown()
@@ -138,9 +134,9 @@ def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None):
         param_space = {k: hp.choice(k, v) for k, v in all_possible_params.items()}
         trials = Trials()
         best = fmin(train_lstm_with_hyperopt, param_space, algo=rand.suggest,
-                    max_evals=CONFIG.get('MAX_EVAL', trials=trials))
+                    max_evals=CONFIG.get('MAX_EVAL'), trials=trials)
         best_params = {k: all_possible_params[k][v] for k, v in best.items()}
-        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path)
+        res = construct_lstm_model(best_params, data, val_data, pretrained_model_path=pretrained_model_path)
         entry_train, best_model = res["entry"], res["model"]
 
     elif tuner_option == "default":
@@ -148,7 +144,7 @@ def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None):
             'nb_units': 64, 'nb_layers': 3, 'optimizer': 'adam', 'time_step': 30,
             'nb_epochs': 10, 'nb_batch': 64, 'drop_proba': 0.1
         }
-        res = construct_lstm_model(best_params, data, pretrained_model_path=pretrained_model_path)
+        res = construct_lstm_model(best_params, data, val_data, pretrained_model_path=pretrained_model_path)
         entry_train, best_model = res["entry"], res["model"]
 
     end = timer()

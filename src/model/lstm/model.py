@@ -1,4 +1,4 @@
-# src/model/stacked_lstm/model.py
+# src/model/lstm/model.py
 import mlflow
 import mlflow.keras
 from timeit import default_timer as timer
@@ -15,11 +15,11 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 MODEL_DIR = os.path.join(PROJECT_ROOT, "models", "stacked_lstm")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-def construct_lstm_model(network_params, train_set, pretrained_model_path=None):
+def construct_lstm_model(network_params, train_set, val_set, pretrained_model_path=None):
     start_time = timer()
 
-    # Construct and train the LSTM model.
     X_train, y_train = train_preprocess(train_set, network_params["time_step"])
+    X_val, y_val = train_preprocess(val_set, network_params["time_step"])
     drop = network_params["drop_proba"]
 
     if pretrained_model_path:
@@ -44,17 +44,15 @@ def construct_lstm_model(network_params, train_set, pretrained_model_path=None):
             model.add(Dropout(drop))
         model.add(Dense(1, activation='sigmoid'))
 
-    # print(f"Model summary:\n{model.summary()}")
     model.compile(optimizer=network_params["optimizer"], loss='binary_crossentropy', metrics=["accuracy"])
     es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=10)
 
-    # Compute class weights
     class_weights = compute_class_weight('balanced', classes=np.array([0, 1]), y=y_train)
     class_weight_dict = {0: class_weights[0], 1: class_weights[1]}
 
     try:
         history = model.fit(X_train, y_train, epochs=network_params["nb_epochs"],
-                            batch_size=network_params["nb_batch"], validation_split=0.2,
+                            batch_size=network_params["nb_batch"], validation_data=(X_val, y_val),
                             verbose=0, callbacks=[es], class_weight=class_weight_dict)
         validation_loss = np.amin(history.history['val_loss'])
     except Exception as e:
