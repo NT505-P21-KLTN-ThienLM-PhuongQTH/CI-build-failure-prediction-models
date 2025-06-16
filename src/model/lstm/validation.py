@@ -1,5 +1,4 @@
 import os
-import random
 import pandas as pd
 import mlflow
 import mlflow.keras
@@ -576,8 +575,8 @@ def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_mo
                                                    "time_step": params["time_step"],
                                                    "input_dim": X_test.shape[2]},
                                         "metrics": {
-                                            "f1": entry_test["F1"],
-                                            "auc": entry_test["AUC"],
+                                            "F1": entry_test["F1"],
+                                            "AUC": entry_test["AUC"],
                                             "accuracy": entry_test["accuracy"],
                                             "recall": entry_test["recall"],
                                             "precision": entry_test["precision"],
@@ -641,7 +640,7 @@ def run_cross_project_validation(bellwether_dataset, all_datasets, bellwether_mo
             with mlflow.start_run(run_name="Final_Model_Registration", nested=True):
                 best_project = best_cross_project_info["params"]["project"]
                 best_iteration = best_cross_project_info["params"]["iteration"]
-                best_f1 = best_cross_project_info["metrics"]["f1"]
+                best_f1 = best_cross_project_info["metrics"]["F1"]
                 best_threshold = best_cross_project_info["params"]["threshold"]
 
                 # Log final model info
