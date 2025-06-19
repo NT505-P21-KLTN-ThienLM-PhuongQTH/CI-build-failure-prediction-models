@@ -14,7 +14,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 MODEL_DIR = os.path.join(PROJECT_ROOT, "models", "conv_lstm")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-CONFIG = {'MAX_EVAL': 10, 'NBR_REP': 2}
+CONFIG = {'MAX_EVAL': 4, 'NBR_REP': 6}
 
 class ConvLSTMWorker(Worker):
     def __init__(self, train_set, **kwargs):

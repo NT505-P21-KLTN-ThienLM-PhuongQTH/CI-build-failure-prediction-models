@@ -14,7 +14,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 MODEL_DIR = os.path.join(PROJECT_ROOT, "models", "stacked_lstm")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-CONFIG = {'MAX_EVAL': 10, 'NBR_REP': 2}
+CONFIG = {'MAX_EVAL': 4, 'NBR_REP': 6}
 
 class LSTMWorker(Worker):
     def __init__(self, train_set, **kwargs):
@@ -72,7 +72,7 @@ def evaluate_tuner(tuner_option, train_set, pretrained_model_path=None):
         'nb_batch': [4, 8, 16, 32, 64],  # Power of 2
         'nb_layers': [1, 2, 3, 4],
         'optimizer': ['adam', 'rmsprop'],
-        'time_step': list(range(20, 40))
+        'time_step': list(range(60, 101, 10))
     }
 
     start = timer()

@@ -79,7 +79,7 @@ def construct_convlstm_model(network_params, train_set, pretrained_model_path=No
         model.add(Flatten())
         model.add(Dense(1, activation='sigmoid', dtype='float32'))  # Ensure output is float32
     model.compile(optimizer=network_params["optimizer"], loss='binary_crossentropy', metrics=["accuracy"])
-    es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=10)
+    es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=3, restore_best_weights=True)
     class_weights = compute_class_weight('balanced', classes=np.array([0, 1]), y=y_train)
     class_weight_dict = {0: class_weights[0], 1: class_weights[1]}
     try:

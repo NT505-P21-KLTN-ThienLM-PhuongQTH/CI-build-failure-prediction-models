@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import warnings
 import os
-# from pipeline import PROJECT_ROOT
 
 
 class Utils:
@@ -136,7 +135,7 @@ class Utils:
     def predict_lstm(model, X, y_true, threshold=None):
         y_pred_probs = model.predict(X, verbose=0)
         if y_true is not None:
-            threshold = Utils.get_best_threshold(y_true, y_pred_probs, priority="f1")
+            threshold = Utils.get_best_threshold(y_true, y_pred_probs, priority="f1") if threshold is None else threshold
             print(f"\nUsing threshold: {threshold}")
             y_pred = Utils.to_labels(y_pred_probs, threshold)
             metrics = Utils.get_entry(y_true, y_pred_probs, y_pred)
@@ -148,7 +147,7 @@ class Utils:
             return y_pred, y_pred_probs
 
     @staticmethod
-    def predict_convlstm(model, X, y_true):
+    def predict_convlstm(model, X, y_true, threshold=None):
         """
         Predict using ConvLSTM model and compute metrics.
 
@@ -165,15 +164,19 @@ class Utils:
         # Ensure y_pred_probs is 1D
         if y_pred_probs.ndim > 1:
             y_pred_probs = y_pred_probs.ravel()
-        precisions, recalls, thresholds = precision_recall_curve(y_true, y_pred_probs)
-        f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-10)
-        best_idx = np.argmax(f1_scores)
-        best_threshold = thresholds[best_idx]
+
+        if threshold is None:
+            precisions, recalls, thresholds = precision_recall_curve(y_true, y_pred_probs)
+            f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-10)
+            best_idx = np.argmax(f1_scores)
+            best_threshold = thresholds[best_idx]
+        else:
+            best_threshold = threshold
         y_pred = (y_pred_probs >= best_threshold).astype(int)
         metrics = {
             "AUC": roc_auc_score(y_true, y_pred_probs),
             "accuracy": accuracy_score(y_true, y_pred),
-            "PR_AUC": auc(recalls, precisions),
+            "PR_AUC": auc(*precision_recall_curve(y_true, y_pred_probs)[:2]),
             "precision": precision_score(y_true, y_pred),
             "recall": recall_score(y_true, y_pred),
             "F1": f1_score(y_true, y_pred)

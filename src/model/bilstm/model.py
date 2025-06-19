@@ -46,15 +46,17 @@ def construct_bilstm_model(network_params, train_set, pretrained_model_path=None
 
     # print(f"Model summary:\n{model.summary()}")
     model.compile(optimizer=network_params["optimizer"], loss='binary_crossentropy', metrics=["accuracy"])
-    es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=10)
+    es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=3, restore_best_weights=True)
 
     # Compute class weights
     class_weights = compute_class_weight('balanced', classes=np.array([0, 1]), y=y_train)
     class_weight_dict = {0: class_weights[0], 1: class_weights[1]}
 
     try:
-        history = model.fit(X_train, y_train, epochs=network_params["nb_epochs"],
-                            batch_size=network_params["nb_batch"], validation_split=0.2,
+        from sklearn.model_selection import train_test_split
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, shuffle=False)
+        history = model.fit(X_train, y_train,validation_data=(X_val, y_val), epochs=network_params["nb_epochs"],
+                            batch_size=network_params["nb_batch"],
                             verbose=0, callbacks=[es], class_weight=class_weight_dict)
         validation_loss = np.amin(history.history['val_loss'])
     except Exception as e:
